@@ -1,12 +1,11 @@
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
 
-  const symbol = searchParams.get("symbol") || "VALE3:BVMF";
-  const interval = searchParams.get("interval") || "1week";
+  const symbol = searchParams.get("symbol") || "PETR4.SA";
+  const interval = searchParams.get("interval") || "1wk";
+  const range = searchParams.get("range") || "1y";
 
-  const apiKey = process.env.TWELVE_DATA_API_KEY;
-
-  const url = `https://api.twelvedata.com/time_series?symbol=${symbol}&interval=${interval}&apikey=${apiKey}`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}`;
 
   const res = await fetch(url);
   const data = await res.json();
