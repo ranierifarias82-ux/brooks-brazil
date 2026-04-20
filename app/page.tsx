@@ -36,6 +36,17 @@ function formatBRL(value: number | null) {
   });
 }
 
+function normalizeSymbol(input: string) {
+  const s = input.trim().toUpperCase();
+
+  if (!s) return DEFAULT_SYMBOL;
+  if (s.endsWith(".SA")) return s;
+  if (s.startsWith("^")) return s;
+  if (s.includes("-")) return s;
+
+  return `${s}.SA`;
+}
+
 function average(values: number[]) {
   if (!values.length) return 0;
   return values.reduce((a, b) => a + b, 0) / values.length;
@@ -385,7 +396,7 @@ function transformYahooData(data: any): Candle[] {
   const result = data?.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
 
-  if (!result || !quote) return [];
+  if (!result || !quote || !result.timestamp) return [];
 
   const candles: Candle[] = [];
 
@@ -427,6 +438,9 @@ async function fetchCandles(symbol: string, interval: "1wk" | "1d", range: strin
     { cache: "no-store" }
   );
   const data = await res.json();
+
+  if (data?.error) return [];
+
   return transformYahooData(data);
 }
 
@@ -484,34 +498,15 @@ function AnalysisCard({
         <p>Carregando...</p>
       ) : (
         <>
-          <p>
-            <strong>Sugestão:</strong> {plan.action}
-          </p>
-          <p>
-            <strong>Setup:</strong> {plan.setup}
-          </p>
-          <p>
-            <strong>Contexto:</strong> {plan.context}
-          </p>
-          <p>
-            <strong>Qualidade da barra:</strong> {plan.signalQuality}
-          </p>
-          <p>
-            <strong>Ponto de entrada:</strong> {formatBRL(plan.entry)}
-          </p>
-          <p>
-            <strong>Stop Loss:</strong> {formatBRL(plan.stop)}
-          </p>
-          <p>
-            <strong>Take Profit:</strong> {formatBRL(plan.target)}
-          </p>
-          <p>
-            <strong>Risco/Retorno:</strong>{" "}
-            {plan.rr != null ? `1:${plan.rr.toFixed(2)}` : "--"}
-          </p>
-          <p>
-            <strong>Leitura:</strong> {plan.explanation}
-          </p>
+          <p><strong>Sugestão:</strong> {plan.action}</p>
+          <p><strong>Setup:</strong> {plan.setup}</p>
+          <p><strong>Contexto:</strong> {plan.context}</p>
+          <p><strong>Qualidade da barra:</strong> {plan.signalQuality}</p>
+          <p><strong>Ponto de entrada:</strong> {formatBRL(plan.entry)}</p>
+          <p><strong>Stop Loss:</strong> {formatBRL(plan.stop)}</p>
+          <p><strong>Take Profit:</strong> {formatBRL(plan.target)}</p>
+          <p><strong>Risco/Retorno:</strong> {plan.rr != null ? `1:${plan.rr.toFixed(2)}` : "--"}</p>
+          <p><strong>Leitura:</strong> {plan.explanation}</p>
         </>
       )}
     </div>
@@ -556,12 +551,7 @@ export default function Page() {
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: "0 auto",
-        }}
-      >
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ marginTop: 0 }}>Brooks Brazil — Weekly + Daily</h1>
         <p style={{ color: "#bbb" }}>
           Análise em dois timeframes com lógica modelada nos 3 livros do Al Brooks.
@@ -578,7 +568,7 @@ export default function Page() {
           <input
             value={symbolInput}
             onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
-            placeholder="Ex: VALE3.SA"
+            placeholder="Ex: VALE3 ou VALE3.SA"
             style={{
               padding: 12,
               borderRadius: 10,
@@ -589,7 +579,7 @@ export default function Page() {
             }}
           />
           <button
-            onClick={() => setSymbol(symbolInput)}
+            onClick={() => setSymbol(normalizeSymbol(symbolInput))}
             style={{
               padding: "12px 18px",
               borderRadius: 10,
