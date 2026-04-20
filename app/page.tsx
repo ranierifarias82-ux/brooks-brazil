@@ -24,9 +24,50 @@ type TradePlan = {
   target: number | null;
   rr: number | null;
   explanation: string;
+  brooksReason: string;
+  brooksReference: string;
+  probability: number | null;
+  grade: "A+" | "A" | "B" | "C" | "Neutro";
 };
 
-const DEFAULT_SYMBOL = "VALE3.SA";
+type ScannerItem = {
+  ticker: string;
+  name: string;
+  sector: string;
+  weekly: TradePlan;
+  daily: TradePlan;
+  score: number;
+};
+
+const STOCK_CATALOG = [
+  { ticker: "VALE3", name: "Vale", sector: "Materiais Básicos" },
+  { ticker: "PETR4", name: "Petrobras PN", sector: "Petróleo, Gás e Biocombustíveis" },
+  { ticker: "ITUB4", name: "Itaú Unibanco PN", sector: "Financeiro" },
+  { ticker: "BBDC4", name: "Bradesco PN", sector: "Financeiro" },
+  { ticker: "BBAS3", name: "Banco do Brasil", sector: "Financeiro" },
+  { ticker: "B3SA3", name: "B3", sector: "Financeiro" },
+  { ticker: "WEGE3", name: "WEG", sector: "Bens Industriais" },
+  { ticker: "RENT3", name: "Localiza", sector: "Consumo Cíclico" },
+  { ticker: "LREN3", name: "Lojas Renner", sector: "Consumo Cíclico" },
+  { ticker: "MGLU3", name: "Magazine Luiza", sector: "Consumo Cíclico" },
+  { ticker: "ABEV3", name: "Ambev", sector: "Consumo Não Cíclico" },
+  { ticker: "JBSS3", name: "JBS", sector: "Consumo Não Cíclico" },
+  { ticker: "SUZB3", name: "Suzano", sector: "Materiais Básicos" },
+  { ticker: "GGBR4", name: "Gerdau PN", sector: "Materiais Básicos" },
+  { ticker: "CSNA3", name: "CSN", sector: "Materiais Básicos" },
+  { ticker: "USIM5", name: "Usiminas PNA", sector: "Materiais Básicos" },
+  { ticker: "RAIL3", name: "Rumo", sector: "Bens Industriais" },
+  { ticker: "CCRO3", name: "CCR", sector: "Bens Industriais" },
+  { ticker: "EQTL3", name: "Equatorial", sector: "Utilidade Pública" },
+  { ticker: "CPFE3", name: "CPFL Energia", sector: "Utilidade Pública" },
+  { ticker: "ELET3", name: "Eletrobras", sector: "Utilidade Pública" },
+  { ticker: "SBSP3", name: "Sabesp", sector: "Utilidade Pública" },
+  { ticker: "VIVT3", name: "Telefônica Brasil", sector: "Comunicações" },
+  { ticker: "TIMS3", name: "TIM", sector: "Comunicações" },
+  { ticker: "RADL3", name: "Raia Drogasil", sector: "Saúde" },
+  { ticker: "RDOR3", name: "Rede D'Or", sector: "Saúde" },
+  { ticker: "HAPV3", name: "Hapvida", sector: "Saúde" },
+];
 
 function formatBRL(value: number | null) {
   if (value == null || Number.isNaN(value)) return "R$ --";
@@ -38,12 +79,8 @@ function formatBRL(value: number | null) {
 
 function normalizeSymbol(input: string) {
   const s = input.trim().toUpperCase();
-
-  if (!s) return DEFAULT_SYMBOL;
+  if (!s) return "VALE3.SA";
   if (s.endsWith(".SA")) return s;
-  if (s.startsWith("^")) return s;
-  if (s.includes("-")) return s;
-
   return `${s}.SA`;
 }
 
@@ -83,7 +120,6 @@ function signalBarQuality(bar: Candle): SignalQuality {
 
 function atr(candles: Candle[], period = 14) {
   if (candles.length < period + 1) return 0;
-
   const trs: number[] = [];
   for (let i = 1; i < candles.length; i++) {
     const h = candles[i].high;
@@ -91,7 +127,6 @@ function atr(candles: Candle[], period = 14) {
     const pc = candles[i - 1].close;
     trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
   }
-
   return average(trs.slice(-period));
 }
 
@@ -165,43 +200,41 @@ function getMeasuredMoveTarget(
 function detectH2Improved(candles: Candle[]) {
   const trend = detectTrendState(candles);
   if (trend !== "BULL" || candles.length < 10) return false;
-
   const last = getLast(candles, 10);
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-
   const swingLows = findSwingLows(last);
   if (swingLows.length < 2) return false;
 
   const low1 = swingLows[swingLows.length - 2];
   const low2 = swingLows[swingLows.length - 1];
 
-  const twoLeggedPullback = low2.index > low1.index;
-  const secondLowHigherOrNear = low2.price >= low1.price * 0.985;
-  const bullishSignal = signal.high > prior.high && !isBearBar(signal);
-
-  return twoLeggedPullback && secondLowHigherOrNear && bullishSignal;
+  return (
+    low2.index > low1.index &&
+    low2.price >= low1.price * 0.985 &&
+    signal.high > prior.high &&
+    !isBearBar(signal)
+  );
 }
 
 function detectLow2Improved(candles: Candle[]) {
   const trend = detectTrendState(candles);
   if (trend !== "BEAR" || candles.length < 10) return false;
-
   const last = getLast(candles, 10);
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-
   const swingHighs = findSwingHighs(last);
   if (swingHighs.length < 2) return false;
 
   const high1 = swingHighs[swingHighs.length - 2];
   const high2 = swingHighs[swingHighs.length - 1];
 
-  const twoLeggedPullback = high2.index > high1.index;
-  const secondHighLowerOrNear = high2.price <= high1.price * 1.015;
-  const bearishSignal = signal.low < prior.low && !isBullBar(signal);
-
-  return twoLeggedPullback && secondHighLowerOrNear && bearishSignal;
+  return (
+    high2.index > high1.index &&
+    high2.price <= high1.price * 1.015 &&
+    signal.low < prior.low &&
+    !isBullBar(signal)
+  );
 }
 
 function detectWedgeBull(candles: Candle[]) {
@@ -213,15 +246,15 @@ function detectWedgeBull(candles: Candle[]) {
   const p1 = lows[lows.length - 3];
   const p2 = lows[lows.length - 2];
   const p3 = lows[lows.length - 1];
-
-  const threePushes = p1.index < p2.index && p2.index < p3.index;
-  const contractingOrFlat = p3.price >= p2.price * 0.97 || p3.price >= p1.price * 0.95;
-
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-  const bullishTrigger = signal.high > prior.high;
 
-  return threePushes && contractingOrFlat && bullishTrigger;
+  return (
+    p1.index < p2.index &&
+    p2.index < p3.index &&
+    (p3.price >= p2.price * 0.97 || p3.price >= p1.price * 0.95) &&
+    signal.high > prior.high
+  );
 }
 
 function detectWedgeBear(candles: Candle[]) {
@@ -233,67 +266,109 @@ function detectWedgeBear(candles: Candle[]) {
   const p1 = highs[highs.length - 3];
   const p2 = highs[highs.length - 2];
   const p3 = highs[highs.length - 1];
-
-  const threePushes = p1.index < p2.index && p2.index < p3.index;
-  const contractingOrFlat = p3.price <= p2.price * 1.03 || p3.price <= p1.price * 1.05;
-
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-  const bearishTrigger = signal.low < prior.low;
 
-  return threePushes && contractingOrFlat && bearishTrigger;
+  return (
+    p1.index < p2.index &&
+    p2.index < p3.index &&
+    (p3.price <= p2.price * 1.03 || p3.price <= p1.price * 1.05) &&
+    signal.low < prior.low
+  );
 }
 
 function detectMajorTrendReversalBull(candles: Candle[]) {
   if (candles.length < 25) return false;
-
   const last = getLast(candles, 25);
   const firstPart = last.slice(0, 12);
   const secondPart = last.slice(12);
-
-  const priorTrend = detectTrendState(firstPart);
-  if (priorTrend !== "BEAR") return false;
+  if (detectTrendState(firstPart) !== "BEAR") return false;
 
   const lowestLow = Math.min(...last.map((c) => c.low));
   const recentLow = Math.min(...secondPart.slice(0, 6).map((c) => c.low));
   const retestLow = Math.min(...secondPart.slice(6).map((c) => c.low));
-
-  const retest = Math.abs(recentLow - retestLow) / lowestLow < 0.03;
   const lastBar = last[last.length - 1];
   const priorBar = last[last.length - 2];
 
-  const strongBullReversal =
+  return (
+    Math.abs(recentLow - retestLow) / lowestLow < 0.03 &&
     signalBarQuality(lastBar) === "FORTE" &&
     isBullBar(lastBar) &&
-    (lastBar.high > priorBar.high || lastBar.close > priorBar.close);
-
-  return retest && strongBullReversal;
+    (lastBar.high > priorBar.high || lastBar.close > priorBar.close)
+  );
 }
 
 function detectMajorTrendReversalBear(candles: Candle[]) {
   if (candles.length < 25) return false;
-
   const last = getLast(candles, 25);
   const firstPart = last.slice(0, 12);
   const secondPart = last.slice(12);
-
-  const priorTrend = detectTrendState(firstPart);
-  if (priorTrend !== "BULL") return false;
+  if (detectTrendState(firstPart) !== "BULL") return false;
 
   const highestHigh = Math.max(...last.map((c) => c.high));
   const recentHigh = Math.max(...secondPart.slice(0, 6).map((c) => c.high));
   const retestHigh = Math.max(...secondPart.slice(6).map((c) => c.high));
-
-  const retest = Math.abs(recentHigh - retestHigh) / highestHigh < 0.03;
   const lastBar = last[last.length - 1];
   const priorBar = last[last.length - 2];
 
-  const strongBearReversal =
+  return (
+    Math.abs(recentHigh - retestHigh) / highestHigh < 0.03 &&
     signalBarQuality(lastBar) === "FORTE" &&
     isBearBar(lastBar) &&
-    (lastBar.low < priorBar.low || lastBar.close < priorBar.close);
+    (lastBar.low < priorBar.low || lastBar.close < priorBar.close)
+  );
+}
 
-  return retest && strongBearReversal;
+function calculateProbability(params: {
+  trend: TrendState;
+  setup: string;
+  signalQuality: SignalQuality;
+  rr: number | null;
+}) {
+  let score = 50;
+
+  if (params.trend === "BULL" || params.trend === "BEAR") score += 10;
+  if (params.signalQuality === "FORTE") score += 12;
+  if (params.signalQuality === "MEDIA") score += 6;
+
+  if (params.setup === "H2" || params.setup === "Low 2") score += 12;
+  if (params.setup === "Wedge Bull" || params.setup === "Wedge Bear") score += 9;
+  if (params.setup === "MTR Bull" || params.setup === "MTR Bear") score += 10;
+  if (params.setup === "Continuação de Tendência") score += 6;
+
+  if (params.rr != null) {
+    if (params.rr >= 2) score += 8;
+    else if (params.rr >= 1.5) score += 4;
+    else score -= 4;
+  }
+
+  if (score > 80) score = 80;
+  if (score < 35) score = 35;
+
+  return score;
+}
+
+function probabilityToGrade(probability: number | null): "A+" | "A" | "B" | "C" | "Neutro" {
+  if (probability == null) return "Neutro";
+  if (probability >= 76) return "A+";
+  if (probability >= 70) return "A";
+  if (probability >= 62) return "B";
+  return "C";
+}
+
+function getGradeColor(grade: "A+" | "A" | "B" | "C" | "Neutro") {
+  switch (grade) {
+    case "A+":
+      return "#22c55e";
+    case "A":
+      return "#16a34a";
+    case "B":
+      return "#eab308";
+    case "C":
+      return "#f97316";
+    default:
+      return "#6b7280";
+  }
 }
 
 function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): TradePlan {
@@ -308,6 +383,11 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       target: null,
       rr: null,
       explanation: "Não há barras suficientes para leitura confiável.",
+      brooksReason: "Sem candles suficientes para leitura técnica consistente.",
+      brooksReference:
+        "Base insuficiente para aplicar a teoria de Trends, Reversals e Trading Ranges.",
+      probability: null,
+      grade: "Neutro",
     };
   }
 
@@ -329,13 +409,14 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
   let stop: number | null = null;
   let target: number | null = null;
   let explanation = "";
+  let brooksReason = "";
+  let brooksReference = "";
 
   const tick = Math.max(0.01, vola * 0.03);
 
   if (isH2 || isWedgeBull || isBullMTR) {
     action = "COMPRA";
     setup = isH2 ? "H2" : isWedgeBull ? "Wedge Bull" : "MTR Bull";
-
     entry = signal.high + tick;
 
     if (setup === "H2") {
@@ -344,25 +425,36 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
         timeframe === "WEEKLY"
           ? "Compra por continuação em H2 dentro de tendência de alta."
           : "Compra diária por H2 em contexto favorável.";
+      brooksReason =
+        "O mercado segue em tendência de alta e o pullback mostra duas pernas corretivas, favorecendo a segunda entrada compradora.";
+      brooksReference =
+        "Al Brooks - Trends: High 2 Buy Setup, Pullbacks em tendência, Always In Long.";
     } else if (setup === "Wedge Bull") {
       stop = getRecentSwingLow(candles, 10);
       explanation =
         timeframe === "WEEKLY"
           ? "Compra por wedge bull com rompimento da barra de sinal."
           : "Compra diária por wedge bull após 3 pushes.";
+      brooksReason =
+        "Há exaustão vendedora em três pushes para baixo, seguida de gatilho comprador acima da barra de sinal.";
+      brooksReference =
+        "Al Brooks - Reversals: Wedge Bottom, Three Push Pattern, reversão após exaustão.";
     } else {
       stop = signal.low;
       explanation =
         timeframe === "WEEKLY"
           ? "Compra por Major Trend Reversal de alta."
           : "Compra diária por reversão maior para alta.";
+      brooksReason =
+        "O mercado mostra falha em continuar a queda, reteste do fundo e barra forte de reversão, sugerindo mudança de lado dominante.";
+      brooksReference =
+        "Al Brooks - Reversals: Major Trend Reversal, Double Bottom, falha de continuação.";
     }
 
     target = stop != null ? getMeasuredMoveTarget(entry, stop, "LONG", 2) : null;
   } else if (isLow2 || isWedgeBear || isBearMTR) {
     action = "VENDA";
     setup = isLow2 ? "Low 2" : isWedgeBear ? "Wedge Bear" : "MTR Bear";
-
     entry = signal.low - tick;
 
     if (setup === "Low 2") {
@@ -371,18 +463,30 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
         timeframe === "WEEKLY"
           ? "Venda por continuação em Low 2 dentro de tendência de baixa."
           : "Venda diária por Low 2 em contexto vendedor.";
+      brooksReason =
+        "O mercado segue em tendência de baixa e o pullback mostra duas pernas corretivas, favorecendo a segunda entrada vendedora.";
+      brooksReference =
+        "Al Brooks - Trends: Low 2 Sell Setup, Pullbacks em bear trend, Always In Short.";
     } else if (setup === "Wedge Bear") {
       stop = getRecentSwingHigh(candles, 10);
       explanation =
         timeframe === "WEEKLY"
           ? "Venda por wedge bear com rompimento da barra de sinal."
           : "Venda diária por wedge bear após 3 pushes.";
+      brooksReason =
+        "Há exaustão compradora em três pushes para cima, seguida de gatilho vendedor abaixo da barra de sinal.";
+      brooksReference =
+        "Al Brooks - Reversals: Wedge Top, Three Push Pattern, reversão após exaustão.";
     } else {
       stop = signal.high;
       explanation =
         timeframe === "WEEKLY"
           ? "Venda por Major Trend Reversal de baixa."
           : "Venda diária por reversão maior para baixa.";
+      brooksReason =
+        "O mercado mostra falha em continuar a alta, reteste do topo e barra forte de reversão, sugerindo troca do controle para vendedores.";
+      brooksReference =
+        "Al Brooks - Reversals: Major Trend Reversal, Double Top, falha de continuação.";
     }
 
     target = stop != null ? getMeasuredMoveTarget(entry, stop, "SHORT", 2) : null;
@@ -399,6 +503,10 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
         timeframe === "WEEKLY"
           ? "Sem setup clássico perfeito, mas o semanal segue em bull trend e permite leitura de continuação."
           : "Sem setup clássico perfeito, mas o diário segue em bull trend e favorece continuidade.";
+      brooksReason =
+        "Mesmo sem um gatilho clássico como H2, a direção dominante continua sendo de alta e o mercado permanece favorecendo continuação.";
+      brooksReference =
+        "Al Brooks - Trends: Trend Continuation, Always In Direction, pullbacks rasos.";
     } else if (trend === "BEAR") {
       action = "VENDA";
       setup = "Continuação de Tendência";
@@ -409,7 +517,15 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
         timeframe === "WEEKLY"
           ? "Sem setup clássico perfeito, mas o semanal segue em bear trend e permite leitura de continuação."
           : "Sem setup clássico perfeito, mas o diário segue em bear trend e favorece continuidade.";
+      brooksReason =
+        "Mesmo sem um gatilho clássico como Low 2, a direção dominante continua sendo de baixa e o mercado segue pressionado para baixo.";
+      brooksReference =
+        "Al Brooks - Trends: Bear Trend Continuation, Always In Short, pullbacks em tendência.";
     } else {
+      brooksReason =
+        "O mercado está em equilíbrio entre compradores e vendedores, sem vantagem estatística clara para operação.";
+      brooksReference =
+        "Al Brooks - Trading Ranges: mercados laterais, Breakout Mode, equilíbrio entre forças.";
       explanation =
         timeframe === "WEEKLY"
           ? "O semanal está em trading range. Sem vantagem estatística clara para compra ou venda."
@@ -421,6 +537,15 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
     entry != null && stop != null && target != null && Math.abs(entry - stop) > 0
       ? Math.abs(target - entry) / Math.abs(entry - stop)
       : null;
+
+  const probability = calculateProbability({
+    trend,
+    setup,
+    signalQuality: quality,
+    rr,
+  });
+
+  const grade = probabilityToGrade(probability);
 
   const contextLabel =
     trend === "BULL" ? "Bull Trend" : trend === "BEAR" ? "Bear Trend" : "Trading Range";
@@ -435,17 +560,19 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
     target,
     rr,
     explanation,
+    brooksReason,
+    brooksReference,
+    probability,
+    grade,
   };
 }
 
 function transformYahooData(data: any): Candle[] {
   const result = data?.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
-
   if (!result || !quote || !result.timestamp) return [];
 
   const candles: Candle[] = [];
-
   for (let i = 0; i < result.timestamp.length; i++) {
     const open = quote.open?.[i];
     const high = quote.high?.[i];
@@ -474,7 +601,6 @@ function transformYahooData(data: any): Candle[] {
       volume: Number(volume ?? 0),
     });
   }
-
   return candles;
 }
 
@@ -484,16 +610,19 @@ async function fetchCandles(symbol: string, interval: "1wk" | "1d", range: strin
     { cache: "no-store" }
   );
   const data = await res.json();
+  if (data?.error) return [];
+  return transformYahooData(data);
+}
 
-  if (data?.error) {
-    console.error("Erro ao buscar candles:", data);
-    return [];
-  }
+function getCombinedScore(weekly: TradePlan, daily: TradePlan) {
+  const wp = weekly.probability ?? 0;
+  const dp = daily.probability ?? 0;
+  let bonus = 0;
 
-  const candles = transformYahooData(data);
-  console.log(`Candles recebidos para ${symbol} ${interval}:`, candles.length);
+  if (weekly.action === daily.action && weekly.action !== "AGUARDAR") bonus += 8;
+  if (weekly.grade === "A+" || daily.grade === "A+") bonus += 4;
 
-  return candles;
+  return wp + dp + bonus;
 }
 
 function TradingViewChart({
@@ -526,13 +655,7 @@ function TradingViewChart({
   );
 }
 
-function AnalysisCard({
-  title,
-  plan,
-}: {
-  title: string;
-  plan: TradePlan | null;
-}) {
+function AnalysisCard({ title, plan }: { title: string; plan: TradePlan | null }) {
   return (
     <div
       style={{
@@ -550,6 +673,20 @@ function AnalysisCard({
         <p>Carregando...</p>
       ) : (
         <>
+          <div
+            style={{
+              display: "inline-block",
+              padding: "6px 12px",
+              borderRadius: 999,
+              background: getGradeColor(plan.grade),
+              color: "#fff",
+              fontWeight: 700,
+              marginBottom: 12,
+            }}
+          >
+            {plan.grade} • {plan.probability != null ? `${plan.probability}%` : "--"}
+          </div>
+
           <p><strong>Sugestão:</strong> {plan.action}</p>
           <p><strong>Setup:</strong> {plan.setup}</p>
           <p><strong>Contexto:</strong> {plan.context}</p>
@@ -559,39 +696,113 @@ function AnalysisCard({
           <p><strong>Take Profit:</strong> {formatBRL(plan.target)}</p>
           <p><strong>Risco/Retorno:</strong> {plan.rr != null ? `1:${plan.rr.toFixed(2)}` : "--"}</p>
           <p><strong>Leitura:</strong> {plan.explanation}</p>
+          <p><strong>Justificativa (Brooks):</strong> {plan.brooksReason}</p>
+          <p><strong>Base Teórica:</strong> {plan.brooksReference}</p>
         </>
       )}
     </div>
   );
 }
 
+function ConfluenceBox({
+  weeklyPlan,
+  dailyPlan,
+}: {
+  weeklyPlan: TradePlan | null;
+  dailyPlan: TradePlan | null;
+}) {
+  if (!weeklyPlan || !dailyPlan) return null;
+
+  const aligned =
+    weeklyPlan.action === dailyPlan.action &&
+    (weeklyPlan.action === "COMPRA" || weeklyPlan.action === "VENDA");
+
+  const message = aligned
+    ? `Confluência forte: semanal e diário estão alinhados em ${weeklyPlan.action}.`
+    : "Sem alinhamento completo entre semanal e diário. Operação exige mais cautela.";
+
+  return (
+    <div
+      style={{
+        background: aligned ? "#052e16" : "#3f2a04",
+        color: "#fff",
+        padding: 18,
+        borderRadius: 16,
+        border: aligned ? "1px solid #166534" : "1px solid #a16207",
+        marginBottom: 20,
+      }}
+    >
+      <h2 style={{ marginTop: 0 }}>Confluência Multi-Timeframe</h2>
+      <p style={{ marginBottom: 6 }}>
+        <strong>Semanal:</strong> {weeklyPlan.action} • {weeklyPlan.grade} •{" "}
+        {weeklyPlan.probability != null ? `${weeklyPlan.probability}%` : "--"}
+      </p>
+      <p style={{ marginBottom: 6 }}>
+        <strong>Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} •{" "}
+        {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}
+      </p>
+      <p style={{ marginBottom: 0 }}>
+        <strong>Leitura combinada:</strong> {message}
+      </p>
+    </div>
+  );
+}
+
 export default function Page() {
-  const [symbolInput, setSymbolInput] = useState(DEFAULT_SYMBOL);
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
-  const [weeklyPlan, setWeeklyPlan] = useState<TradePlan | null>(null);
-  const [dailyPlan, setDailyPlan] = useState<TradePlan | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [selectedSector, setSelectedSector] = useState("Todos");
+  const [scanner, setScanner] = useState<ScannerItem[]>([]);
+  const [loadingScanner, setLoadingScanner] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<ScannerItem | null>(null);
 
-  async function runAnalysis(activeSymbol: string) {
-    setLoading(true);
-    try {
-      const [weeklyCandles, dailyCandles] = await Promise.all([
-        fetchCandles(activeSymbol, "1wk", "2y"),
-        fetchCandles(activeSymbol, "1d", "1y"),
-      ]);
+  const sectors = useMemo(
+    () => ["Todos", ...Array.from(new Set(STOCK_CATALOG.map((s) => s.sector)))],
+    []
+  );
 
-      setWeeklyPlan(buildTradePlan(weeklyCandles, "WEEKLY"));
-      setDailyPlan(buildTradePlan(dailyCandles, "DAILY"));
-    } finally {
-      setLoading(false);
+  async function runScanner() {
+    setLoadingScanner(true);
+
+    const catalog =
+      selectedSector === "Todos"
+        ? STOCK_CATALOG
+        : STOCK_CATALOG.filter((item) => item.sector === selectedSector);
+
+    const results = await Promise.all(
+      catalog.map(async (item) => {
+        const symbol = normalizeSymbol(item.ticker);
+        const [weeklyCandles, dailyCandles] = await Promise.all([
+          fetchCandles(symbol, "1wk", "2y"),
+          fetchCandles(symbol, "1d", "1y"),
+        ]);
+
+        const weekly = buildTradePlan(weeklyCandles, "WEEKLY");
+        const daily = buildTradePlan(dailyCandles, "DAILY");
+        const score = getCombinedScore(weekly, daily);
+
+        return {
+          ticker: item.ticker,
+          name: item.name,
+          sector: item.sector,
+          weekly,
+          daily,
+          score,
+        } as ScannerItem;
+      })
+    );
+
+    const sorted = results.sort((a, b) => b.score - a.score);
+    setScanner(sorted);
+    if (sorted.length > 0 && !selectedItem) setSelectedItem(sorted[0]);
+    if (sorted.length > 0 && selectedItem) {
+      const found = sorted.find((s) => s.ticker === selectedItem.ticker);
+      setSelectedItem(found || sorted[0]);
     }
+    setLoadingScanner(false);
   }
 
   useEffect(() => {
-    runAnalysis(symbol);
-  }, [symbol]);
-
-  const cleanTicker = useMemo(() => symbol.replace(".SA", ""), [symbol]);
+    runScanner();
+  }, [selectedSector]);
 
   return (
     <div
@@ -603,35 +814,34 @@ export default function Page() {
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Weekly + Daily</h1>
+      <div style={{ maxWidth: 1400, margin: "0 auto" }}>
+        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Scanner Weekly + Daily</h1>
         <p style={{ color: "#bbb" }}>
-          Análise em dois timeframes com foco operacional em compra, venda, entrada, stop e alvo.
+          Scanner com ranking por probabilidade, nota, confluência semanal/diária e justificativa Brooks.
         </p>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            marginBottom: 24,
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            value={symbolInput}
-            onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
-            placeholder="Ex: VALE3 ou VALE3.SA"
+        <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+          <select
+            value={selectedSector}
+            onChange={(e) => setSelectedSector(e.target.value)}
             style={{
               padding: 12,
               borderRadius: 10,
               border: "1px solid #333",
               background: "#151515",
               color: "#fff",
-              minWidth: 220,
+              minWidth: 240,
             }}
-          />
+          >
+            {sectors.map((sector) => (
+              <option key={sector} value={sector}>
+                {sector}
+              </option>
+            ))}
+          </select>
+
           <button
-            onClick={() => setSymbol(normalizeSymbol(symbolInput))}
+            onClick={runScanner}
             style={{
               padding: "12px 18px",
               borderRadius: 10,
@@ -642,35 +852,139 @@ export default function Page() {
               fontWeight: 700,
             }}
           >
-            Analisar
+            Atualizar Scanner
           </button>
         </div>
-
-        {loading && <p>Atualizando análise...</p>}
 
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 16,
+            gridTemplateColumns: "420px 1fr",
+            gap: 20,
+            alignItems: "start",
           }}
         >
-          <div>
-            <AnalysisCard title={`Semanal — ${cleanTicker}`} plan={weeklyPlan} />
-            <TradingViewChart
-              symbol={symbol}
-              interval="W"
-              title={`Gráfico Semanal — ${cleanTicker}`}
-            />
+          <div
+            style={{
+              background: "#111",
+              border: "1px solid #2a2a2a",
+              borderRadius: 16,
+              padding: 16,
+              maxHeight: "85vh",
+              overflowY: "auto",
+            }}
+          >
+            <h2 style={{ marginTop: 0 }}>Ranking</h2>
+            {loadingScanner && <p>Atualizando scanner...</p>}
+
+            {!loadingScanner &&
+              scanner.map((item, index) => (
+                <button
+                  key={item.ticker}
+                  onClick={() => setSelectedItem(item)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background:
+                      selectedItem?.ticker === item.ticker ? "#1f2937" : "#171717",
+                    color: "#fff",
+                    border: "1px solid #2a2a2a",
+                    borderRadius: 12,
+                    padding: 14,
+                    marginBottom: 10,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        #{index + 1} • {item.ticker}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#bbb" }}>{item.name}</div>
+                      <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                        {item.sector}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          display: "inline-block",
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          background: getGradeColor(item.weekly.grade),
+                          fontWeight: 700,
+                          marginBottom: 6,
+                        }}
+                      >
+                        W {item.weekly.grade}
+                      </div>
+                      <div
+                        style={{
+                          display: "inline-block",
+                          padding: "4px 10px",
+                          borderRadius: 999,
+                          background: getGradeColor(item.daily.grade),
+                          fontWeight: 700,
+                        }}
+                      >
+                        D {item.daily.grade}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, fontSize: 13 }}>
+                    <strong>Score:</strong> {item.score.toFixed(0)} •{" "}
+                    <strong>Semanal:</strong> {item.weekly.action} •{" "}
+                    <strong>Diário:</strong> {item.daily.action}
+                  </div>
+                </button>
+              ))}
           </div>
 
           <div>
-            <AnalysisCard title={`Diário — ${cleanTicker}`} plan={dailyPlan} />
-            <TradingViewChart
-              symbol={symbol}
-              interval="D"
-              title={`Gráfico Diário — ${cleanTicker}`}
-            />
+            {selectedItem ? (
+              <>
+                <ConfluenceBox
+                  weeklyPlan={selectedItem.weekly}
+                  dailyPlan={selectedItem.daily}
+                />
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 16,
+                  }}
+                >
+                  <div>
+                    <AnalysisCard
+                      title={`Semanal — ${selectedItem.ticker}`}
+                      plan={selectedItem.weekly}
+                    />
+                    <TradingViewChart
+                      symbol={normalizeSymbol(selectedItem.ticker)}
+                      interval="W"
+                      title={`Gráfico Semanal — ${selectedItem.ticker}`}
+                    />
+                  </div>
+
+                  <div>
+                    <AnalysisCard
+                      title={`Diário — ${selectedItem.ticker}`}
+                      plan={selectedItem.daily}
+                    />
+                    <TradingViewChart
+                      symbol={normalizeSymbol(selectedItem.ticker)}
+                      interval="D"
+                      title={`Gráfico Diário — ${selectedItem.ticker}`}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p>Selecione um ativo no ranking.</p>
+            )}
           </div>
         </div>
       </div>
