@@ -96,25 +96,30 @@ function atr(candles: Candle[], period = 14) {
 }
 
 function detectTrendState(candles: Candle[]): TrendState {
-  const last = getLast(candles, 12);
-  if (last.length < 12) return "RANGE";
+  const last = getLast(candles, 20);
+  if (last.length < 20) return "RANGE";
 
   const bullBars = last.filter(isBullBar).length;
   const bearBars = last.filter(isBearBar).length;
+
   const strongBull = last.filter(
     (b) => isBullBar(b) && signalBarQuality(b) !== "FRACA"
   ).length;
+
   const strongBear = last.filter(
     (b) => isBearBar(b) && signalBarQuality(b) !== "FRACA"
   ).length;
 
-  const overlapCount = last.slice(1).filter((b, i) => {
-    const prev = last[i];
-    return !(b.low > prev.high || b.high < prev.low);
-  }).length;
+  const closes = last.map((c) => c.close);
+  const firstHalf = closes.slice(0, 10);
+  const secondHalf = closes.slice(10);
 
-  if (bullBars >= 8 && strongBull >= 4 && overlapCount <= 6) return "BULL";
-  if (bearBars >= 8 && strongBear >= 4 && overlapCount <= 6) return "BEAR";
+  const firstAvg = average(firstHalf);
+  const secondAvg = average(secondHalf);
+
+  if (bullBars >= 11 && strongBull >= 5 && secondAvg > firstAvg) return "BULL";
+  if (bearBars >= 11 && strongBear >= 5 && secondAvg < firstAvg) return "BEAR";
+
   return "RANGE";
 }
 
@@ -136,6 +141,25 @@ function findSwingHighs(candles: Candle[]) {
     }
   }
   return swings;
+}
+
+function getRecentSwingLow(candles: Candle[], lookback = 10) {
+  return Math.min(...getLast(candles, lookback).map((c) => c.low));
+}
+
+function getRecentSwingHigh(candles: Candle[], lookback = 10) {
+  return Math.max(...getLast(candles, lookback).map((c) => c.high));
+}
+
+function getMeasuredMoveTarget(
+  entry: number,
+  stop: number,
+  direction: "LONG" | "SHORT",
+  multiplier = 2
+) {
+  const risk = Math.abs(entry - stop);
+  if (direction === "LONG") return entry + risk * multiplier;
+  return entry - risk * multiplier;
 }
 
 function detectH2Improved(candles: Candle[]) {
@@ -273,7 +297,7 @@ function detectMajorTrendReversalBear(candles: Candle[]) {
 }
 
 function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): TradePlan {
-  if (candles.length < 30) {
+  if (candles.length < 20) {
     return {
       action: "AGUARDAR",
       setup: "Sem dados",
@@ -315,27 +339,26 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
     entry = signal.high + tick;
 
     if (setup === "H2") {
-      stop = Math.min(...getLast(candles, 6).map((c) => c.low));
+      stop = getRecentSwingLow(candles, 6);
       explanation =
         timeframe === "WEEKLY"
-          ? "Compra semanal por continuação em H2 dentro de contexto bull."
-          : "Compra diária por H2 em continuação favorável.";
+          ? "Compra por continuação em H2 dentro de tendência de alta."
+          : "Compra diária por H2 em contexto favorável.";
     } else if (setup === "Wedge Bull") {
-      stop = Math.min(...getLast(candles, 10).map((c) => c.low));
+      stop = getRecentSwingLow(candles, 10);
       explanation =
         timeframe === "WEEKLY"
-          ? "Compra semanal por wedge bull com gatilho acima da barra de sinal."
+          ? "Compra por wedge bull com rompimento da barra de sinal."
           : "Compra diária por wedge bull após 3 pushes.";
     } else {
       stop = signal.low;
       explanation =
         timeframe === "WEEKLY"
-          ? "Compra semanal por Major Trend Reversal bull."
+          ? "Compra por Major Trend Reversal de alta."
           : "Compra diária por reversão maior para alta.";
     }
 
-    const risk = entry - stop;
-    target = risk > 0 ? entry + risk * 2 : null;
+    target = stop != null ? getMeasuredMoveTarget(entry, stop, "LONG", 2) : null;
   } else if (isLow2 || isWedgeBear || isBearMTR) {
     action = "VENDA";
     setup = isLow2 ? "Low 2" : isWedgeBear ? "Wedge Bear" : "MTR Bear";
@@ -343,32 +366,55 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
     entry = signal.low - tick;
 
     if (setup === "Low 2") {
-      stop = Math.max(...getLast(candles, 6).map((c) => c.high));
+      stop = getRecentSwingHigh(candles, 6);
       explanation =
         timeframe === "WEEKLY"
-          ? "Venda semanal por continuação em Low 2 dentro de contexto bear."
-          : "Venda diária por Low 2 em continuação vendedora.";
+          ? "Venda por continuação em Low 2 dentro de tendência de baixa."
+          : "Venda diária por Low 2 em contexto vendedor.";
     } else if (setup === "Wedge Bear") {
-      stop = Math.max(...getLast(candles, 10).map((c) => c.high));
+      stop = getRecentSwingHigh(candles, 10);
       explanation =
         timeframe === "WEEKLY"
-          ? "Venda semanal por wedge bear com gatilho abaixo da barra de sinal."
+          ? "Venda por wedge bear com rompimento da barra de sinal."
           : "Venda diária por wedge bear após 3 pushes.";
     } else {
       stop = signal.high;
       explanation =
         timeframe === "WEEKLY"
-          ? "Venda semanal por Major Trend Reversal bear."
+          ? "Venda por Major Trend Reversal de baixa."
           : "Venda diária por reversão maior para baixa.";
     }
 
-    const risk = stop - entry;
-    target = risk > 0 ? entry - risk * 2 : null;
-  } else {
-    explanation =
-      timeframe === "WEEKLY"
-        ? "O gráfico semanal não apresenta confluência suficiente entre contexto e setup."
-        : "O gráfico diário não apresenta confluência suficiente entre contexto e setup.";
+    target = stop != null ? getMeasuredMoveTarget(entry, stop, "SHORT", 2) : null;
+  }
+
+  if (action === "AGUARDAR") {
+    if (trend === "BULL") {
+      action = "COMPRA";
+      setup = "Continuação de Tendência";
+      entry = signal.high + tick;
+      stop = getRecentSwingLow(candles, 8);
+      target = stop != null ? getMeasuredMoveTarget(entry, stop, "LONG", 1.8) : null;
+      explanation =
+        timeframe === "WEEKLY"
+          ? "Sem setup clássico perfeito, mas o semanal segue em bull trend e permite leitura de continuação."
+          : "Sem setup clássico perfeito, mas o diário segue em bull trend e favorece continuidade.";
+    } else if (trend === "BEAR") {
+      action = "VENDA";
+      setup = "Continuação de Tendência";
+      entry = signal.low - tick;
+      stop = getRecentSwingHigh(candles, 8);
+      target = stop != null ? getMeasuredMoveTarget(entry, stop, "SHORT", 1.8) : null;
+      explanation =
+        timeframe === "WEEKLY"
+          ? "Sem setup clássico perfeito, mas o semanal segue em bear trend e permite leitura de continuação."
+          : "Sem setup clássico perfeito, mas o diário segue em bear trend e favorece continuidade.";
+    } else {
+      explanation =
+        timeframe === "WEEKLY"
+          ? "O semanal está em trading range. Sem vantagem estatística clara para compra ou venda."
+          : "O diário está em trading range. Melhor aguardar um breakout ou reversão mais clara.";
+    }
   }
 
   const rr =
@@ -439,9 +485,15 @@ async function fetchCandles(symbol: string, interval: "1wk" | "1d", range: strin
   );
   const data = await res.json();
 
-  if (data?.error) return [];
+  if (data?.error) {
+    console.error("Erro ao buscar candles:", data);
+    return [];
+  }
 
-  return transformYahooData(data);
+  const candles = transformYahooData(data);
+  console.log(`Candles recebidos para ${symbol} ${interval}:`, candles.length);
+
+  return candles;
 }
 
 function TradingViewChart({
@@ -554,7 +606,7 @@ export default function Page() {
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <h1 style={{ marginTop: 0 }}>Brooks Brazil — Weekly + Daily</h1>
         <p style={{ color: "#bbb" }}>
-          Análise em dois timeframes com lógica modelada nos 3 livros do Al Brooks.
+          Análise em dois timeframes com foco operacional em compra, venda, entrada, stop e alvo.
         </p>
 
         <div
