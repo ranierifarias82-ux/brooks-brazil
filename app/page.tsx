@@ -13,6 +13,7 @@ type Candle = {
 type TrendState = "BULL" | "BEAR" | "RANGE";
 type Action = "COMPRA" | "VENDA" | "AGUARDAR";
 type SignalQuality = "FORTE" | "MEDIA" | "FRACA";
+type TF = "WEEKLY" | "DAILY" | "H8";
 
 type TradePlan = {
   action: Action;
@@ -36,6 +37,10 @@ type ScannerItem = {
   sector: string;
   weekly: TradePlan;
   daily: TradePlan;
+  h8: TradePlan;
+  weeklyCandles: Candle[];
+  dailyCandles: Candle[];
+  h8Candles: Candle[];
   score: number;
 };
 
@@ -81,6 +86,8 @@ function normalizeSymbol(input: string) {
   const s = input.trim().toUpperCase();
   if (!s) return "VALE3.SA";
   if (s.endsWith(".SA")) return s;
+  if (s.startsWith("^")) return s;
+  if (s.includes("-")) return s;
   return `${s}.SA`;
 }
 
@@ -371,7 +378,7 @@ function getGradeColor(grade: "A+" | "A" | "B" | "C" | "Neutro") {
   }
 }
 
-function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): TradePlan {
+function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   if (candles.length < 20) {
     return {
       action: "AGUARDAR",
@@ -424,7 +431,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Compra por continuação em H2 dentro de tendência de alta."
-          : "Compra diária por H2 em contexto favorável.";
+          : timeframe === "DAILY"
+          ? "Compra diária por H2 em contexto favorável."
+          : "Compra em 8h por H2 dentro de contexto favorável.";
       brooksReason =
         "O mercado segue em tendência de alta e o pullback mostra duas pernas corretivas, favorecendo a segunda entrada compradora.";
       brooksReference =
@@ -434,7 +443,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Compra por wedge bull com rompimento da barra de sinal."
-          : "Compra diária por wedge bull após 3 pushes.";
+          : timeframe === "DAILY"
+          ? "Compra diária por wedge bull após 3 pushes."
+          : "Compra em 8h por wedge bull após 3 pushes.";
       brooksReason =
         "Há exaustão vendedora em três pushes para baixo, seguida de gatilho comprador acima da barra de sinal.";
       brooksReference =
@@ -444,7 +455,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Compra por Major Trend Reversal de alta."
-          : "Compra diária por reversão maior para alta.";
+          : timeframe === "DAILY"
+          ? "Compra diária por reversão maior para alta."
+          : "Compra em 8h por reversão maior para alta.";
       brooksReason =
         "O mercado mostra falha em continuar a queda, reteste do fundo e barra forte de reversão, sugerindo mudança de lado dominante.";
       brooksReference =
@@ -462,7 +475,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Venda por continuação em Low 2 dentro de tendência de baixa."
-          : "Venda diária por Low 2 em contexto vendedor.";
+          : timeframe === "DAILY"
+          ? "Venda diária por Low 2 em contexto vendedor."
+          : "Venda em 8h por Low 2 em contexto vendedor.";
       brooksReason =
         "O mercado segue em tendência de baixa e o pullback mostra duas pernas corretivas, favorecendo a segunda entrada vendedora.";
       brooksReference =
@@ -472,7 +487,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Venda por wedge bear com rompimento da barra de sinal."
-          : "Venda diária por wedge bear após 3 pushes.";
+          : timeframe === "DAILY"
+          ? "Venda diária por wedge bear após 3 pushes."
+          : "Venda em 8h por wedge bear após 3 pushes.";
       brooksReason =
         "Há exaustão compradora em três pushes para cima, seguida de gatilho vendedor abaixo da barra de sinal.";
       brooksReference =
@@ -482,7 +499,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Venda por Major Trend Reversal de baixa."
-          : "Venda diária por reversão maior para baixa.";
+          : timeframe === "DAILY"
+          ? "Venda diária por reversão maior para baixa."
+          : "Venda em 8h por reversão maior para baixa.";
       brooksReason =
         "O mercado mostra falha em continuar a alta, reteste do topo e barra forte de reversão, sugerindo troca do controle para vendedores.";
       brooksReference =
@@ -502,7 +521,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Sem setup clássico perfeito, mas o semanal segue em bull trend e permite leitura de continuação."
-          : "Sem setup clássico perfeito, mas o diário segue em bull trend e favorece continuidade.";
+          : timeframe === "DAILY"
+          ? "Sem setup clássico perfeito, mas o diário segue em bull trend e favorece continuidade."
+          : "Sem setup clássico perfeito, mas o 8h segue em bull trend e favorece continuidade.";
       brooksReason =
         "Mesmo sem um gatilho clássico como H2, a direção dominante continua sendo de alta e o mercado permanece favorecendo continuação.";
       brooksReference =
@@ -516,7 +537,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "Sem setup clássico perfeito, mas o semanal segue em bear trend e permite leitura de continuação."
-          : "Sem setup clássico perfeito, mas o diário segue em bear trend e favorece continuidade.";
+          : timeframe === "DAILY"
+          ? "Sem setup clássico perfeito, mas o diário segue em bear trend e favorece continuidade."
+          : "Sem setup clássico perfeito, mas o 8h segue em bear trend e favorece continuidade.";
       brooksReason =
         "Mesmo sem um gatilho clássico como Low 2, a direção dominante continua sendo de baixa e o mercado segue pressionado para baixo.";
       brooksReference =
@@ -529,7 +552,9 @@ function buildTradePlan(candles: Candle[], timeframe: "WEEKLY" | "DAILY"): Trade
       explanation =
         timeframe === "WEEKLY"
           ? "O semanal está em trading range. Sem vantagem estatística clara para compra ou venda."
-          : "O diário está em trading range. Melhor aguardar um breakout ou reversão mais clara.";
+          : timeframe === "DAILY"
+          ? "O diário está em trading range. Melhor aguardar um breakout ou reversão mais clara."
+          : "O 8h está em trading range. Melhor aguardar rompimento ou reversão melhor definida.";
     }
   }
 
@@ -604,7 +629,7 @@ function transformYahooData(data: any): Candle[] {
   return candles;
 }
 
-async function fetchCandles(symbol: string, interval: "1wk" | "1d", range: string) {
+async function fetchCandles(symbol: string, interval: string, range: string) {
   const res = await fetch(
     `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`,
     { cache: "no-store" }
@@ -614,43 +639,148 @@ async function fetchCandles(symbol: string, interval: "1wk" | "1d", range: strin
   return transformYahooData(data);
 }
 
-function getCombinedScore(weekly: TradePlan, daily: TradePlan) {
-  const wp = weekly.probability ?? 0;
-  const dp = daily.probability ?? 0;
-  let bonus = 0;
+function aggregateTo8H(candles60m: Candle[]) {
+  const valid = candles60m.filter(
+    (c) =>
+      c.open != null &&
+      c.high != null &&
+      c.low != null &&
+      c.close != null &&
+      !Number.isNaN(c.open) &&
+      !Number.isNaN(c.high) &&
+      !Number.isNaN(c.low) &&
+      !Number.isNaN(c.close)
+  );
 
-  if (weekly.action === daily.action && weekly.action !== "AGUARDAR") bonus += 8;
-  if (weekly.grade === "A+" || daily.grade === "A+") bonus += 4;
+  const out: Candle[] = [];
+  for (let i = 0; i < valid.length; i += 8) {
+    const chunk = valid.slice(i, i + 8);
+    if (chunk.length < 4) continue;
 
-  return wp + dp + bonus;
+    out.push({
+      open: chunk[0].open,
+      high: Math.max(...chunk.map((c) => c.high)),
+      low: Math.min(...chunk.map((c) => c.low)),
+      close: chunk[chunk.length - 1].close,
+      volume: chunk.reduce((sum, c) => sum + (c.volume || 0), 0),
+    });
+  }
+
+  return out;
 }
 
-function TradingViewChart({
-  symbol,
-  interval,
+function getCombinedScore(weekly: TradePlan, daily: TradePlan, h8: TradePlan) {
+  const wp = weekly.probability ?? 0;
+  const dp = daily.probability ?? 0;
+  const hp = h8.probability ?? 0;
+
+  let bonus = 0;
+  const allBuy =
+    weekly.action === "COMPRA" && daily.action === "COMPRA" && h8.action === "COMPRA";
+  const allSell =
+    weekly.action === "VENDA" && daily.action === "VENDA" && h8.action === "VENDA";
+
+  if (allBuy || allSell) bonus += 12;
+  else {
+    const nonNeutral = [weekly.action, daily.action, h8.action].filter((a) => a !== "AGUARDAR");
+    if (nonNeutral.length >= 2 && new Set(nonNeutral).size === 1) bonus += 6;
+  }
+
+  if (weekly.grade === "A+" || daily.grade === "A+" || h8.grade === "A+") bonus += 4;
+
+  return wp + dp + hp + bonus;
+}
+
+function SimpleCandlesChart({
+  candles,
   title,
 }: {
-  symbol: string;
-  interval: "W" | "D";
+  candles: Candle[];
   title: string;
 }) {
-  const tvSymbol = symbol.replace(".SA", "");
-  const src = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_${interval}_${tvSymbol}&symbol=BMFBOVESPA:${tvSymbol}&interval=${interval}&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=F1F3F6&studies=[]&theme=dark&style=1&timezone=America%2FSao_Paulo&withdateranges=1&hideideas=1`;
+  if (!candles.length) {
+    return (
+      <div
+        style={{
+          background: "#111",
+          border: "1px solid #2a2a2a",
+          borderRadius: 16,
+          padding: 16,
+          height: 380,
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>{title}</h3>
+        <p>Sem candles para exibir.</p>
+      </div>
+    );
+  }
+
+  const visible = candles.slice(-60);
+  const maxHigh = Math.max(...visible.map((c) => c.high));
+  const minLow = Math.min(...visible.map((c) => c.low));
+  const range = Math.max(maxHigh - minLow, 0.0001);
+
+  const width = 1000;
+  const height = 320;
+  const padding = 24;
+  const innerW = width - padding * 2;
+  const innerH = height - padding * 2;
+
+  const candleW = innerW / visible.length;
+  const bodyW = Math.max(3, candleW * 0.55);
+
+  const y = (price: number) =>
+    padding + ((maxHigh - price) / range) * innerH;
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <h3 style={{ marginBottom: 8 }}>{title}</h3>
-      <iframe
-        title={title}
-        src={src}
-        style={{
-          width: "100%",
-          height: 420,
-          border: "1px solid #333",
-          borderRadius: 12,
-          background: "#111",
-        }}
-      />
+    <div
+      style={{
+        background: "#111",
+        border: "1px solid #2a2a2a",
+        borderRadius: 16,
+        padding: 16,
+      }}
+    >
+      <h3 style={{ marginTop: 0, marginBottom: 12 }}>{title}</h3>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        style={{ width: "100%", height: 340, display: "block", background: "#0b0b0b", borderRadius: 12 }}
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((ratio, i) => {
+          const gy = padding + innerH * ratio;
+          return (
+            <g key={i}>
+              <line x1={padding} y1={gy} x2={width - padding} y2={gy} stroke="#1f2937" strokeWidth="1" />
+            </g>
+          );
+        })}
+
+        {visible.map((c, i) => {
+          const x = padding + i * candleW + candleW / 2;
+          const wickTop = y(c.high);
+          const wickBottom = y(c.low);
+          const openY = y(c.open);
+          const closeY = y(c.close);
+          const top = Math.min(openY, closeY);
+          const bottom = Math.max(openY, closeY);
+          const color = c.close >= c.open ? "#22c55e" : "#ef4444";
+
+          return (
+            <g key={i}>
+              <line x1={x} y1={wickTop} x2={x} y2={wickBottom} stroke={color} strokeWidth="1.5" />
+              <rect
+                x={x - bodyW / 2}
+                y={top}
+                width={bodyW}
+                height={Math.max(2, bottom - top)}
+                fill={color}
+                rx={1}
+              />
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -661,13 +791,13 @@ function AnalysisCard({ title, plan }: { title: string; plan: TradePlan | null }
       style={{
         background: "#171717",
         color: "#fff",
-        padding: 20,
+        padding: 18,
         borderRadius: 16,
         border: "1px solid #2a2a2a",
-        marginBottom: 16,
+        marginBottom: 14,
       }}
     >
-      <h2 style={{ marginTop: 0 }}>{title}</h2>
+      <h2 style={{ marginTop: 0, fontSize: 20 }}>{title}</h2>
 
       {!plan ? (
         <p>Carregando...</p>
@@ -707,43 +837,41 @@ function AnalysisCard({ title, plan }: { title: string; plan: TradePlan | null }
 function ConfluenceBox({
   weeklyPlan,
   dailyPlan,
+  h8Plan,
 }: {
   weeklyPlan: TradePlan | null;
   dailyPlan: TradePlan | null;
+  h8Plan: TradePlan | null;
 }) {
-  if (!weeklyPlan || !dailyPlan) return null;
+  if (!weeklyPlan || !dailyPlan || !h8Plan) return null;
 
-  const aligned =
-    weeklyPlan.action === dailyPlan.action &&
-    (weeklyPlan.action === "COMPRA" || weeklyPlan.action === "VENDA");
+  const actions = [weeklyPlan.action, dailyPlan.action, h8Plan.action];
+  const allBuy = actions.every((a) => a === "COMPRA");
+  const allSell = actions.every((a) => a === "VENDA");
 
-  const message = aligned
-    ? `Confluência forte: semanal e diário estão alinhados em ${weeklyPlan.action}.`
-    : "Sem alinhamento completo entre semanal e diário. Operação exige mais cautela.";
+  const message =
+    allBuy || allSell
+      ? `Confluência máxima: semanal, diário e 8h estão alinhados em ${weeklyPlan.action}.`
+      : "Sem alinhamento total entre os 3 timeframes. A operação exige mais seletividade.";
+
+  const strong = allBuy || allSell;
 
   return (
     <div
       style={{
-        background: aligned ? "#052e16" : "#3f2a04",
+        background: strong ? "#052e16" : "#3f2a04",
         color: "#fff",
         padding: 18,
         borderRadius: 16,
-        border: aligned ? "1px solid #166534" : "1px solid #a16207",
+        border: strong ? "1px solid #166534" : "1px solid #a16207",
         marginBottom: 20,
       }}
     >
       <h2 style={{ marginTop: 0 }}>Confluência Multi-Timeframe</h2>
-      <p style={{ marginBottom: 6 }}>
-        <strong>Semanal:</strong> {weeklyPlan.action} • {weeklyPlan.grade} •{" "}
-        {weeklyPlan.probability != null ? `${weeklyPlan.probability}%` : "--"}
-      </p>
-      <p style={{ marginBottom: 6 }}>
-        <strong>Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} •{" "}
-        {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}
-      </p>
-      <p style={{ marginBottom: 0 }}>
-        <strong>Leitura combinada:</strong> {message}
-      </p>
+      <p><strong>Semanal:</strong> {weeklyPlan.action} • {weeklyPlan.grade} • {weeklyPlan.probability != null ? `${weeklyPlan.probability}%` : "--"}</p>
+      <p><strong>Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} • {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}</p>
+      <p><strong>8h:</strong> {h8Plan.action} • {h8Plan.grade} • {h8Plan.probability != null ? `${h8Plan.probability}%` : "--"}</p>
+      <p style={{ marginBottom: 0 }}><strong>Leitura combinada:</strong> {message}</p>
     </div>
   );
 }
@@ -770,14 +898,20 @@ export default function Page() {
     const results = await Promise.all(
       catalog.map(async (item) => {
         const symbol = normalizeSymbol(item.ticker);
-        const [weeklyCandles, dailyCandles] = await Promise.all([
+
+        const [weeklyCandles, dailyCandles, hourlyCandles] = await Promise.all([
           fetchCandles(symbol, "1wk", "2y"),
           fetchCandles(symbol, "1d", "1y"),
+          fetchCandles(symbol, "60m", "3mo"),
         ]);
+
+        const h8Candles = aggregateTo8H(hourlyCandles);
 
         const weekly = buildTradePlan(weeklyCandles, "WEEKLY");
         const daily = buildTradePlan(dailyCandles, "DAILY");
-        const score = getCombinedScore(weekly, daily);
+        const h8 = buildTradePlan(h8Candles, "H8");
+
+        const score = getCombinedScore(weekly, daily, h8);
 
         return {
           ticker: item.ticker,
@@ -785,6 +919,10 @@ export default function Page() {
           sector: item.sector,
           weekly,
           daily,
+          h8,
+          weeklyCandles,
+          dailyCandles,
+          h8Candles,
           score,
         } as ScannerItem;
       })
@@ -792,11 +930,13 @@ export default function Page() {
 
     const sorted = results.sort((a, b) => b.score - a.score);
     setScanner(sorted);
+
     if (sorted.length > 0 && !selectedItem) setSelectedItem(sorted[0]);
     if (sorted.length > 0 && selectedItem) {
       const found = sorted.find((s) => s.ticker === selectedItem.ticker);
       setSelectedItem(found || sorted[0]);
     }
+
     setLoadingScanner(false);
   }
 
@@ -810,14 +950,14 @@ export default function Page() {
         minHeight: "100vh",
         background: "#0b0b0b",
         color: "#fff",
-        padding: 24,
+        padding: 20,
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <div style={{ maxWidth: 1400, margin: "0 auto" }}>
-        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Scanner Weekly + Daily</h1>
+      <div style={{ maxWidth: 1600, margin: "0 auto" }}>
+        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Scanner Weekly + Daily + 8H</h1>
         <p style={{ color: "#bbb" }}>
-          Scanner com ranking por probabilidade, nota, confluência semanal/diária e justificativa Brooks.
+          Ranking com confluência de 3 timeframes, probabilidade, nota, entrada, stop, alvo e justificativa Brooks.
         </p>
 
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
@@ -830,7 +970,7 @@ export default function Page() {
               border: "1px solid #333",
               background: "#151515",
               color: "#fff",
-              minWidth: 240,
+              minWidth: 260,
             }}
           >
             {sectors.map((sector) => (
@@ -859,8 +999,8 @@ export default function Page() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "420px 1fr",
-            gap: 20,
+            gridTemplateColumns: "390px 1fr",
+            gap: 18,
             alignItems: "start",
           }}
         >
@@ -870,8 +1010,10 @@ export default function Page() {
               border: "1px solid #2a2a2a",
               borderRadius: 16,
               padding: 16,
-              maxHeight: "85vh",
+              maxHeight: "88vh",
               overflowY: "auto",
+              position: "sticky",
+              top: 12,
             }}
           >
             <h2 style={{ marginTop: 0 }}>Ranking</h2>
@@ -910,11 +1052,11 @@ export default function Page() {
                       <div
                         style={{
                           display: "inline-block",
-                          padding: "4px 10px",
+                          padding: "4px 8px",
                           borderRadius: 999,
                           background: getGradeColor(item.weekly.grade),
                           fontWeight: 700,
-                          marginBottom: 6,
+                          marginBottom: 4,
                         }}
                       >
                         W {item.weekly.grade}
@@ -922,21 +1064,34 @@ export default function Page() {
                       <div
                         style={{
                           display: "inline-block",
-                          padding: "4px 10px",
+                          padding: "4px 8px",
                           borderRadius: 999,
                           background: getGradeColor(item.daily.grade),
                           fontWeight: 700,
+                          marginBottom: 4,
                         }}
                       >
                         D {item.daily.grade}
+                      </div>
+                      <div
+                        style={{
+                          display: "inline-block",
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          background: getGradeColor(item.h8.grade),
+                          fontWeight: 700,
+                        }}
+                      >
+                        8H {item.h8.grade}
                       </div>
                     </div>
                   </div>
 
                   <div style={{ marginTop: 10, fontSize: 13 }}>
-                    <strong>Score:</strong> {item.score.toFixed(0)} •{" "}
-                    <strong>Semanal:</strong> {item.weekly.action} •{" "}
-                    <strong>Diário:</strong> {item.daily.action}
+                    <strong>Score:</strong> {item.score.toFixed(0)}
+                  </div>
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#bbb" }}>
+                    W: {item.weekly.action} • D: {item.daily.action} • 8H: {item.h8.action}
                   </div>
                 </button>
               ))}
@@ -948,37 +1103,30 @@ export default function Page() {
                 <ConfluenceBox
                   weeklyPlan={selectedItem.weekly}
                   dailyPlan={selectedItem.daily}
+                  h8Plan={selectedItem.h8}
                 />
 
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 16,
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gap: 14,
+                    alignItems: "start",
                   }}
                 >
                   <div>
-                    <AnalysisCard
-                      title={`Semanal — ${selectedItem.ticker}`}
-                      plan={selectedItem.weekly}
-                    />
-                    <TradingViewChart
-                      symbol={normalizeSymbol(selectedItem.ticker)}
-                      interval="W"
-                      title={`Gráfico Semanal — ${selectedItem.ticker}`}
-                    />
+                    <AnalysisCard title={`Semanal — ${selectedItem.ticker}`} plan={selectedItem.weekly} />
+                    <SimpleCandlesChart candles={selectedItem.weeklyCandles} title={`Gráfico Semanal — ${selectedItem.ticker}`} />
                   </div>
 
                   <div>
-                    <AnalysisCard
-                      title={`Diário — ${selectedItem.ticker}`}
-                      plan={selectedItem.daily}
-                    />
-                    <TradingViewChart
-                      symbol={normalizeSymbol(selectedItem.ticker)}
-                      interval="D"
-                      title={`Gráfico Diário — ${selectedItem.ticker}`}
-                    />
+                    <AnalysisCard title={`Diário — ${selectedItem.ticker}`} plan={selectedItem.daily} />
+                    <SimpleCandlesChart candles={selectedItem.dailyCandles} title={`Gráfico Diário — ${selectedItem.ticker}`} />
+                  </div>
+
+                  <div>
+                    <AnalysisCard title={`8H — ${selectedItem.ticker}`} plan={selectedItem.h8} />
+                    <SimpleCandlesChart candles={selectedItem.h8Candles} title={`Gráfico 8H — ${selectedItem.ticker}`} />
                   </div>
                 </div>
               </>
