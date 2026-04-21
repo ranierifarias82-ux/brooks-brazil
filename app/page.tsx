@@ -600,6 +600,108 @@ function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   };
 }
 
+function aggregateTo4H(candles60m: Candle[]) {
+  const valid = candles60m.filter(
+    (c) =>
+      c.open != null &&
+      c.high != null &&
+      c.low != null &&
+      c.close != null &&
+      !Number.isNaN(c.open) &&
+      !Number.isNaN(c.high) &&
+      !Number.isNaN(c.low) &&
+      !Number.isNaN(c.close)
+  );
+
+  const out: Candle[] = [];
+
+  for (let i = 0; i < valid.length; i += 4) {
+    const chunk = valid.slice(i, i + 4);
+    if (chunk.length < 2) continue;
+
+    out.push({
+      open: chunk[0].open,
+      high: Math.max(...chunk.map((c) => c.high)),
+      low: Math.min(...chunk.map((c) => c.low)),
+      close: chunk[chunk.length - 1].close,
+      volume: chunk.reduce((sum, c) => sum + (c.volume || 0), 0),
+    });
+  }
+
+  return out;
+}
+
+function getCombinedScore(weekly: TradePlan, daily: TradePlan, h4: TradePlan) {
+  const wp = weekly.probability ?? 0;
+  const dp = daily.probability ?? 0;
+  const hp = h4.probability ?? 0;
+
+  let bonus = 0;
+
+  const allBuy =
+    weekly.action === "COMPRA" &&
+    daily.action === "COMPRA" &&
+    h4.action === "COMPRA";
+
+  const allSell =
+    weekly.action === "VENDA" &&
+    daily.action === "VENDA" &&
+    h4.action === "VENDA";
+
+  if (allBuy || allSell) bonus += 12;
+  else {
+    const nonNeutral = [weekly.action, daily.action, h4.action].filter(
+      (a) => a !== "AGUARDAR"
+    );
+    if (nonNeutral.length >= 2 && new Set(nonNeutral).size === 1) bonus += 6;
+  }
+
+  if (weekly.grade === "A+" || daily.grade === "A+" || h4.grade === "A+") bonus += 4;
+
+  return wp + dp + hp + bonus;
+}
+
+function transformYahooData(data: any): Candle[] {
+  const result = data?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0];
+  const timestamps = result?.timestamp;
+
+  if (!result || !quote || !timestamps) return [];
+
+  const candles: Candle[] = [];
+
+  for (let i = 0; i < timestamps.length; i++) {
+    const open = quote.open?.[i];
+    const high = quote.high?.[i];
+    const low = quote.low?.[i];
+    const close = quote.close?.[i];
+    const volume = quote.volume?.[i];
+
+    if (
+      open == null ||
+      high == null ||
+      low == null ||
+      close == null ||
+      Number.isNaN(open) ||
+      Number.isNaN(high) ||
+      Number.isNaN(low) ||
+      Number.isNaN(close)
+    ) {
+      continue;
+    }
+
+    candles.push({
+      open: Number(open),
+      high: Number(high),
+      low: Number(low),
+      close: Number(close),
+      volume: Number(volume ?? 0),
+    });
+  }
+
+  return candles;
+}
+
 async function fetchCandles(symbol: string, interval: string, range: string) {
   const res = await fetch(
     `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`,
