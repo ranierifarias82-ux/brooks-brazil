@@ -653,6 +653,37 @@ async function fetchCandles(symbol: string, interval: string, range: string) {
   return transformYahooData(data);
 }
 
+function aggregateTo4H(candles60m: Candle[]) {
+  const valid = candles60m.filter(
+    (c) =>
+      c.open != null &&
+      c.high != null &&
+      c.low != null &&
+      c.close != null &&
+      !Number.isNaN(c.open) &&
+      !Number.isNaN(c.high) &&
+      !Number.isNaN(c.low) &&
+      !Number.isNaN(c.close)
+  );
+
+  const out: Candle[] = [];
+
+  for (let i = 0; i < valid.length; i += 4) {
+    const chunk = valid.slice(i, i + 4);
+    if (chunk.length < 2) continue;
+
+    out.push({
+      open: chunk[0].open,
+      high: Math.max(...chunk.map((c) => c.high)),
+      low: Math.min(...chunk.map((c) => c.low)),
+      close: chunk[chunk.length - 1].close,
+      volume: chunk.reduce((sum, c) => sum + (c.volume || 0), 0),
+    });
+  }
+
+  return out;
+}
+
 function getCombinedScore(weekly: TradePlan, daily: TradePlan, h4: TradePlan) {
   const wp = weekly.probability ?? 0;
   const dp = daily.probability ?? 0;
