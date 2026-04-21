@@ -600,65 +600,19 @@ function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   };
 }
 
-function aggregateTo4H(candles60m: Candle[]) {
-  const valid = candles60m.filter(
-    (c) =>
-      c.open != null &&
-      c.high != null &&
-      c.low != null &&
-      c.close != null &&
-      !Number.isNaN(c.open) &&
-      !Number.isNaN(c.high) &&
-      !Number.isNaN(c.low) &&
-      !Number.isNaN(c.close)
+async function fetchCandles(symbol: string, interval: string, range: string) {
+  const res = await fetch(
+    `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`,
+    { cache: "no-store" }
   );
+  const data = await res.json();
 
-  const out: Candle[] = [];
-
-  for (let i = 0; i < valid.length; i += 4) {
-    const chunk = valid.slice(i, i + 4);
-    if (chunk.length < 2) continue;
-
-    out.push({
-      open: chunk[0].open,
-      high: Math.max(...chunk.map((c) => c.high)),
-      low: Math.min(...chunk.map((c) => c.low)),
-      close: chunk[chunk.length - 1].close,
-      volume: chunk.reduce((sum, c) => sum + (c.volume || 0), 0),
-    });
+  if (data?.error) {
+    console.error("Erro ao buscar candles:", data);
+    return [];
   }
 
-  return out;
-}
-
-function getCombinedScore(weekly: TradePlan, daily: TradePlan, h4: TradePlan) {
-  const wp = weekly.probability ?? 0;
-  const dp = daily.probability ?? 0;
-  const hp = h4.probability ?? 0;
-
-  let bonus = 0;
-
-  const allBuy =
-    weekly.action === "COMPRA" &&
-    daily.action === "COMPRA" &&
-    h4.action === "COMPRA";
-
-  const allSell =
-    weekly.action === "VENDA" &&
-    daily.action === "VENDA" &&
-    h4.action === "VENDA";
-
-  if (allBuy || allSell) bonus += 12;
-  else {
-    const nonNeutral = [weekly.action, daily.action, h4.action].filter(
-      (a) => a !== "AGUARDAR"
-    );
-    if (nonNeutral.length >= 2 && new Set(nonNeutral).size === 1) bonus += 6;
-  }
-
-  if (weekly.grade === "A+" || daily.grade === "A+" || h4.grade === "A+") bonus += 4;
-
-  return wp + dp + hp + bonus;
+  return transformYahooData(data);
 }
 
 function CandlesChart({
