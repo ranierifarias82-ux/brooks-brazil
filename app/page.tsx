@@ -213,7 +213,6 @@ function detectH2Improved(candles: Candle[]) {
   const last = getLast(candles, 10);
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-
   const swingLows = findSwingLows(last);
   if (swingLows.length < 2) return false;
 
@@ -235,7 +234,6 @@ function detectLow2Improved(candles: Candle[]) {
   const last = getLast(candles, 10);
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
-
   const swingHighs = findSwingHighs(last);
   if (swingHighs.length < 2) return false;
 
@@ -602,54 +600,6 @@ function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   };
 }
 
-function transformYahooData(data: any): Candle[] {
-  const result = data?.chart?.result?.[0];
-  const quote = result?.indicators?.quote?.[0];
-  if (!result || !quote || !result.timestamp) return [];
-
-  const candles: Candle[] = [];
-  for (let i = 0; i < result.timestamp.length; i++) {
-    const open = quote.open?.[i];
-    const high = quote.high?.[i];
-    const low = quote.low?.[i];
-    const close = quote.close?.[i];
-    const volume = quote.volume?.[i];
-
-    if (
-      open == null ||
-      high == null ||
-      low == null ||
-      close == null ||
-      Number.isNaN(open) ||
-      Number.isNaN(high) ||
-      Number.isNaN(low) ||
-      Number.isNaN(close)
-    ) {
-      continue;
-    }
-
-    candles.push({
-      open: Number(open),
-      high: Number(high),
-      low: Number(low),
-      close: Number(close),
-      volume: Number(volume ?? 0),
-    });
-  }
-
-  return candles;
-}
-
-async function fetchCandles(symbol: string, interval: string, range: string) {
-  const res = await fetch(
-    `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`,
-    { cache: "no-store" }
-  );
-  const data = await res.json();
-  if (data?.error) return [];
-  return transformYahooData(data);
-}
-
 function aggregateTo4H(candles60m: Candle[]) {
   const valid = candles60m.filter(
     (c) =>
@@ -711,32 +661,147 @@ function getCombinedScore(weekly: TradePlan, daily: TradePlan, h4: TradePlan) {
   return wp + dp + hp + bonus;
 }
 
-function TradingViewChart({
-  symbol,
-  interval,
+function CandlesChart({
+  candles,
   title,
 }: {
-  symbol: string;
-  interval: "W" | "D" | "240";
+  candles: Candle[];
   title: string;
 }) {
-  const tvSymbol = symbol.replace(".SA", "");
-  const src = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_${interval}_${tvSymbol}&symbol=BMFBOVESPA:${tvSymbol}&interval=${interval}&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=F1F3F6&studies=[]&theme=dark&style=1&timezone=America%2FSao_Paulo&withdateranges=1&hideideas=1`;
+  const data = candles.slice(-70);
+
+  if (!data.length) {
+    return (
+      <div
+        style={{
+          background: "#111",
+          border: "1px solid #2a2a2a",
+          borderRadius: 16,
+          padding: 16,
+          marginTop: 16,
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>{title}</h3>
+        <div
+          style={{
+            height: 420,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#888",
+            background: "#0b0b0b",
+            borderRadius: 12,
+          }}
+        >
+          Sem candles disponíveis para este gráfico.
+        </div>
+      </div>
+    );
+  }
+
+  const maxHigh = Math.max(...data.map((c) => c.high));
+  const minLow = Math.min(...data.map((c) => c.low));
+  const priceRange = Math.max(maxHigh - minLow, 0.0001);
+
+  const width = 1000;
+  const height = 420;
+  const paddingTop = 20;
+  const paddingRight = 60;
+  const paddingBottom = 28;
+  const paddingLeft = 18;
+
+  const plotWidth = width - paddingLeft - paddingRight;
+  const plotHeight = height - paddingTop - paddingBottom;
+  const candleStep = plotWidth / data.length;
+  const bodyWidth = Math.max(3, candleStep * 0.58);
+
+  const y = (price: number) =>
+    paddingTop + ((maxHigh - price) / priceRange) * plotHeight;
+
+  const priceTicks = 5;
+  const gridPrices = Array.from({ length: priceTicks }, (_, i) => {
+    const ratio = i / (priceTicks - 1);
+    return maxHigh - ratio * priceRange;
+  });
 
   return (
-    <div style={{ marginTop: 16 }}>
-      <h3 style={{ marginBottom: 8 }}>{title}</h3>
-      <iframe
-        title={title}
-        src={src}
+    <div
+      style={{
+        background: "#111",
+        border: "1px solid #2a2a2a",
+        borderRadius: 16,
+        padding: 16,
+        marginTop: 16,
+      }}
+    >
+      <h3 style={{ marginTop: 0, marginBottom: 10 }}>{title}</h3>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
         style={{
           width: "100%",
           height: 420,
-          border: "1px solid #333",
+          display: "block",
+          background: "#0b0b0b",
           borderRadius: 12,
-          background: "#111",
         }}
-      />
+      >
+        {gridPrices.map((p, i) => {
+          const gy = y(p);
+          return (
+            <g key={i}>
+              <line
+                x1={paddingLeft}
+                y1={gy}
+                x2={width - paddingRight}
+                y2={gy}
+                stroke="#1f2937"
+                strokeWidth="1"
+              />
+              <text
+                x={width - paddingRight + 8}
+                y={gy + 4}
+                fill="#9ca3af"
+                fontSize="12"
+              >
+                {p.toFixed(2)}
+              </text>
+            </g>
+          );
+        })}
+
+        {data.map((c, i) => {
+          const x = paddingLeft + i * candleStep + candleStep / 2;
+          const highY = y(c.high);
+          const lowY = y(c.low);
+          const openY = y(c.open);
+          const closeY = y(c.close);
+          const top = Math.min(openY, closeY);
+          const bottom = Math.max(openY, closeY);
+          const color = c.close >= c.open ? "#22c55e" : "#ef4444";
+
+          return (
+            <g key={i}>
+              <line
+                x1={x}
+                y1={highY}
+                x2={x}
+                y2={lowY}
+                stroke={color}
+                strokeWidth="1.4"
+              />
+              <rect
+                x={x - bodyWidth / 2}
+                y={top}
+                width={bodyWidth}
+                height={Math.max(2, bottom - top)}
+                rx={1}
+                fill={color}
+              />
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }
@@ -1072,27 +1137,24 @@ export default function Page() {
                 >
                   <div>
                     <AnalysisCard title={`Semanal — ${selectedItem.ticker}`} plan={selectedItem.weekly} />
-                    <TradingViewChart
-                      symbol={normalizeSymbol(selectedItem.ticker)}
-                      interval="W"
+                    <CandlesChart
+                      candles={selectedItem.weeklyCandles}
                       title={`Gráfico Semanal — ${selectedItem.ticker}`}
                     />
                   </div>
 
                   <div>
                     <AnalysisCard title={`Diário — ${selectedItem.ticker}`} plan={selectedItem.daily} />
-                    <TradingViewChart
-                      symbol={normalizeSymbol(selectedItem.ticker)}
-                      interval="D"
+                    <CandlesChart
+                      candles={selectedItem.dailyCandles}
                       title={`Gráfico Diário — ${selectedItem.ticker}`}
                     />
                   </div>
 
                   <div>
                     <AnalysisCard title={`4H — ${selectedItem.ticker}`} plan={selectedItem.h4} />
-                    <TradingViewChart
-                      symbol={normalizeSymbol(selectedItem.ticker)}
-                      interval="240"
+                    <CandlesChart
+                      candles={selectedItem.h4Candles}
                       title={`Gráfico 4H — ${selectedItem.ticker}`}
                     />
                   </div>
