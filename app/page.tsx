@@ -38,6 +38,7 @@ type ScannerItem = {
   weekly: TradePlan;
   daily: TradePlan;
   h4: TradePlan;
+  palexDaily: TradePlan;
   score: number;
 };
 
@@ -116,7 +117,9 @@ function isBearBar(c: Candle) {
 function signalBarQuality(bar: Candle): SignalQuality {
   const range = barRange(bar);
   if (range <= 0) return "FRACA";
+
   const ratio = barBody(bar) / range;
+
   if (ratio >= 0.65) return "FORTE";
   if (ratio >= 0.4) return "MEDIA";
   return "FRACA";
@@ -126,10 +129,12 @@ function atr(candles: Candle[], period = 14) {
   if (candles.length < period + 1) return 0;
 
   const trs: number[] = [];
+
   for (let i = 1; i < candles.length; i++) {
     const h = candles[i].high;
     const l = candles[i].low;
     const pc = candles[i - 1].close;
+
     trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
   }
 
@@ -166,21 +171,25 @@ function detectTrendState(candles: Candle[]): TrendState {
 
 function findSwingLows(candles: Candle[]) {
   const swings: { index: number; price: number }[] = [];
+
   for (let i = 1; i < candles.length - 1; i++) {
     if (candles[i].low < candles[i - 1].low && candles[i].low < candles[i + 1].low) {
       swings.push({ index: i, price: candles[i].low });
     }
   }
+
   return swings;
 }
 
 function findSwingHighs(candles: Candle[]) {
   const swings: { index: number; price: number }[] = [];
+
   for (let i = 1; i < candles.length - 1; i++) {
     if (candles[i].high > candles[i - 1].high && candles[i].high > candles[i + 1].high) {
       swings.push({ index: i, price: candles[i].high });
     }
   }
+
   return swings;
 }
 
@@ -211,6 +220,7 @@ function detectH2Improved(candles: Candle[]) {
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
   const swingLows = findSwingLows(last);
+
   if (swingLows.length < 2) return false;
 
   const low1 = swingLows[swingLows.length - 2];
@@ -232,6 +242,7 @@ function detectLow2Improved(candles: Candle[]) {
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
   const swingHighs = findSwingHighs(last);
+
   if (swingHighs.length < 2) return false;
 
   const high1 = swingHighs[swingHighs.length - 2];
@@ -250,11 +261,13 @@ function detectWedgeBull(candles: Candle[]) {
 
   const last = getLast(candles, 20);
   const lows = findSwingLows(last);
+
   if (lows.length < 3) return false;
 
   const p1 = lows[lows.length - 3];
   const p2 = lows[lows.length - 2];
   const p3 = lows[lows.length - 1];
+
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
 
@@ -271,11 +284,13 @@ function detectWedgeBear(candles: Candle[]) {
 
   const last = getLast(candles, 20);
   const highs = findSwingHighs(last);
+
   if (highs.length < 3) return false;
 
   const p1 = highs[highs.length - 3];
   const p2 = highs[highs.length - 2];
   const p3 = highs[highs.length - 1];
+
   const signal = last[last.length - 1];
   const prior = last[last.length - 2];
 
@@ -293,11 +308,13 @@ function detectMajorTrendReversalBull(candles: Candle[]) {
   const last = getLast(candles, 25);
   const firstPart = last.slice(0, 12);
   const secondPart = last.slice(12);
+
   if (detectTrendState(firstPart) !== "BEAR") return false;
 
   const lowestLow = Math.min(...last.map((c) => c.low));
   const recentLow = Math.min(...secondPart.slice(0, 6).map((c) => c.low));
   const retestLow = Math.min(...secondPart.slice(6).map((c) => c.low));
+
   const lastBar = last[last.length - 1];
   const priorBar = last[last.length - 2];
 
@@ -315,11 +332,13 @@ function detectMajorTrendReversalBear(candles: Candle[]) {
   const last = getLast(candles, 25);
   const firstPart = last.slice(0, 12);
   const secondPart = last.slice(12);
+
   if (detectTrendState(firstPart) !== "BULL") return false;
 
   const highestHigh = Math.max(...last.map((c) => c.high));
   const recentHigh = Math.max(...secondPart.slice(0, 6).map((c) => c.high));
   const retestHigh = Math.max(...secondPart.slice(6).map((c) => c.high));
+
   const lastBar = last[last.length - 1];
   const priorBar = last[last.length - 2];
 
@@ -597,6 +616,196 @@ function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   };
 }
 
+function buildPalexPlanDaily(candles: Candle[]): TradePlan {
+  if (candles.length < 30) {
+    return {
+      action: "AGUARDAR",
+      setup: "PALEX sem dados",
+      context: "Dados insuficientes",
+      signalQuality: "FRACA",
+      entry: null,
+      stop: null,
+      target: null,
+      rr: null,
+      explanation: "Não há candles diários suficientes para aplicar a leitura PALEX.",
+      brooksReason: "Leitura PALEX indisponível por insuficiência de dados.",
+      brooksReference:
+        "PALEX — leitura diária baseada em estrutura, força, regiões de liquidez, rompimento, falha e continuidade.",
+      probability: null,
+      grade: "Neutro",
+    };
+  }
+
+  const trend = detectTrendState(candles);
+  const signal = candles[candles.length - 1];
+  const prior = candles[candles.length - 2];
+  const quality = signalBarQuality(signal);
+  const vola = atr(candles, 14);
+  const tick = Math.max(0.01, vola * 0.03);
+
+  const last20 = getLast(candles, 20);
+  const last10 = getLast(candles, 10);
+
+  const recentHigh20 = Math.max(...last20.map((c) => c.high));
+  const recentLow20 = Math.min(...last20.map((c) => c.low));
+  const recentHigh10 = Math.max(...last10.map((c) => c.high));
+  const recentLow10 = Math.min(...last10.map((c) => c.low));
+
+  const avgRange20 = average(last20.map(barRange));
+  const currentRange = barRange(signal);
+
+  const expansionBar = avgRange20 > 0 && currentRange >= avgRange20 * 1.15;
+  const bullCloseStrength = signal.close >= signal.low + currentRange * 0.65;
+  const bearCloseStrength = signal.close <= signal.low + currentRange * 0.35;
+
+  const breaksPriorHigh = signal.high > prior.high;
+  const breaksPriorLow = signal.low < prior.low;
+
+  const falseBreakDown =
+    signal.low < recentLow10 &&
+    signal.close > prior.close &&
+    bullCloseStrength &&
+    isBullBar(signal);
+
+  const falseBreakUp =
+    signal.high > recentHigh10 &&
+    signal.close < prior.close &&
+    bearCloseStrength &&
+    isBearBar(signal);
+
+  const bullContinuation =
+    trend === "BULL" &&
+    isBullBar(signal) &&
+    bullCloseStrength &&
+    breaksPriorHigh &&
+    signal.close > average(last20.map((c) => c.close));
+
+  const bearContinuation =
+    trend === "BEAR" &&
+    isBearBar(signal) &&
+    bearCloseStrength &&
+    breaksPriorLow &&
+    signal.close < average(last20.map((c) => c.close));
+
+  const bullBreakout =
+    signal.close >= recentHigh20 * 0.995 &&
+    isBullBar(signal) &&
+    bullCloseStrength &&
+    expansionBar;
+
+  const bearBreakout =
+    signal.close <= recentLow20 * 1.005 &&
+    isBearBar(signal) &&
+    bearCloseStrength &&
+    expansionBar;
+
+  let action: Action = "AGUARDAR";
+  let setup = "PALEX — Aguardar";
+  let entry: number | null = null;
+  let stop: number | null = null;
+  let target: number | null = null;
+  let explanation =
+    "A leitura PALEX diária não encontrou assimetria suficiente. Melhor aguardar nova barra de força, rompimento confirmado ou falha em região relevante.";
+  let context =
+    trend === "BULL" ? "PALEX Bull" : trend === "BEAR" ? "PALEX Bear" : "PALEX Range";
+
+  if (falseBreakDown) {
+    action = "COMPRA";
+    setup = "PALEX — Falha Vendedora";
+    entry = signal.high + tick;
+    stop = signal.low;
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "PALEX identifica possível falha vendedora: o preço rompeu mínima recente, rejeitou a região inferior e fechou com força compradora no gráfico diário.";
+  } else if (falseBreakUp) {
+    action = "VENDA";
+    setup = "PALEX — Falha Compradora";
+    entry = signal.low - tick;
+    stop = signal.high;
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "PALEX identifica possível falha compradora: o preço rompeu máxima recente, rejeitou a região superior e fechou com força vendedora no gráfico diário.";
+  } else if (bullBreakout) {
+    action = "COMPRA";
+    setup = "PALEX — Rompimento Comprador";
+    entry = signal.high + tick;
+    stop = recentLow10;
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "PALEX identifica rompimento comprador diário com expansão de range, fechamento forte e pressão acima da região de máxima recente.";
+  } else if (bearBreakout) {
+    action = "VENDA";
+    setup = "PALEX — Rompimento Vendedor";
+    entry = signal.low - tick;
+    stop = recentHigh10;
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "PALEX identifica rompimento vendedor diário com expansão de range, fechamento fraco e pressão abaixo da região de mínima recente.";
+  } else if (bullContinuation) {
+    action = "COMPRA";
+    setup = "PALEX — Continuação Compradora";
+    entry = signal.high + tick;
+    stop = recentLow10;
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "PALEX identifica continuidade compradora no diário: estrutura de alta, barra positiva, fechamento forte e rompimento da máxima anterior.";
+  } else if (bearContinuation) {
+    action = "VENDA";
+    setup = "PALEX — Continuação Vendedora";
+    entry = signal.low - tick;
+    stop = recentHigh10;
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "PALEX identifica continuidade vendedora no diário: estrutura de baixa, barra negativa, fechamento fraco e rompimento da mínima anterior.";
+  }
+
+  const rr =
+    entry != null && stop != null && target != null && Math.abs(entry - stop) > 0
+      ? Math.abs(target - entry) / Math.abs(entry - stop)
+      : null;
+
+  let probability = calculateProbability({
+    trend,
+    setup:
+      action === "COMPRA" || action === "VENDA"
+        ? "Continuação de Tendência"
+        : setup,
+    signalQuality: quality,
+    rr,
+  });
+
+  if (setup.includes("Falha")) probability += 4;
+  if (setup.includes("Rompimento")) probability += 3;
+  if (expansionBar && action !== "AGUARDAR") probability += 3;
+  if (quality === "FORTE" && action !== "AGUARDAR") probability += 2;
+
+  probability = Math.min(84, Math.max(35, probability));
+
+  return {
+    action,
+    setup,
+    context,
+    signalQuality: quality,
+    entry,
+    stop,
+    target,
+    rr,
+    explanation,
+    brooksReason:
+      "Leitura PALEX independente da leitura Al Brooks, aplicada exclusivamente ao gráfico diário.",
+    brooksReference:
+      "PALEX — análise diária de price action com foco em estrutura, força da barra, regiões de máxima/mínima recente, rompimento, rejeição, falha e continuidade.",
+    probability,
+    grade: probabilityToGrade(probability),
+  };
+}
+
+function calculateAlignment(daily: TradePlan, palexDaily: TradePlan) {
+  if (!daily || !palexDaily) return false;
+  if (daily.action === "AGUARDAR" || palexDaily.action === "AGUARDAR") return false;
+  return daily.action === palexDaily.action;
+}
+
 function transformYahooData(data: any): Candle[] {
   const result = data?.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
@@ -643,6 +852,7 @@ async function fetchCandles(symbol: string, interval: string, range: string) {
     `/api/history?symbol=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`,
     { cache: "no-store" }
   );
+
   const data = await res.json();
 
   if (data?.error) {
@@ -706,6 +916,7 @@ function getCombinedScore(weekly: TradePlan, daily: TradePlan, h4: TradePlan) {
     const nonNeutral = [weekly.action, daily.action, h4.action].filter(
       (a) => a !== "AGUARDAR"
     );
+
     if (nonNeutral.length >= 2 && new Set(nonNeutral).size === 1) bonus += 6;
   }
 
@@ -722,6 +933,7 @@ function TradingViewChart({
   title: string;
 }) {
   const tvSymbol = symbol.replace(".SA", "");
+
   const src = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_main_${tvSymbol}&symbol=BMFBOVESPA:${tvSymbol}&interval=W&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=F1F3F6&studies=[]&theme=dark&style=1&timezone=America%2FSao_Paulo&withdateranges=1&hideideas=1`;
 
   return (
@@ -735,9 +947,11 @@ function TradingViewChart({
       }}
     >
       <h3 style={{ marginTop: 0 }}>{title}</h3>
+
       <p style={{ color: "#9ca3af", fontSize: 13, marginTop: 0 }}>
         Você pode alterar manualmente o timeframe dentro do próprio gráfico.
       </p>
+
       <iframe
         title={title}
         src={src}
@@ -753,7 +967,17 @@ function TradingViewChart({
   );
 }
 
-function AnalysisCard({ title, plan }: { title: string; plan: TradePlan | null }) {
+function AnalysisCard({
+  title,
+  plan,
+  reasonLabel = "Justificativa",
+  referenceLabel = "Base Teórica",
+}: {
+  title: string;
+  plan: TradePlan | null;
+  reasonLabel?: string;
+  referenceLabel?: string;
+}) {
   return (
     <div
       style={{
@@ -784,17 +1008,40 @@ function AnalysisCard({ title, plan }: { title: string; plan: TradePlan | null }
             {plan.grade} • {plan.probability != null ? `${plan.probability}%` : "--"}
           </div>
 
-          <p><strong>Sugestão:</strong> {plan.action}</p>
-          <p><strong>Setup:</strong> {plan.setup}</p>
-          <p><strong>Contexto:</strong> {plan.context}</p>
-          <p><strong>Qualidade da barra:</strong> {plan.signalQuality}</p>
-          <p><strong>Ponto de entrada:</strong> {formatBRL(plan.entry)}</p>
-          <p><strong>Stop Loss:</strong> {formatBRL(plan.stop)}</p>
-          <p><strong>Take Profit:</strong> {formatBRL(plan.target)}</p>
-          <p><strong>Risco/Retorno:</strong> {plan.rr != null ? `1:${plan.rr.toFixed(2)}` : "--"}</p>
-          <p><strong>Leitura:</strong> {plan.explanation}</p>
-          <p><strong>Justificativa (Brooks):</strong> {plan.brooksReason}</p>
-          <p><strong>Base Teórica:</strong> {plan.brooksReference}</p>
+          <p>
+            <strong>Sugestão:</strong> {plan.action}
+          </p>
+          <p>
+            <strong>Setup:</strong> {plan.setup}
+          </p>
+          <p>
+            <strong>Contexto:</strong> {plan.context}
+          </p>
+          <p>
+            <strong>Qualidade da barra:</strong> {plan.signalQuality}
+          </p>
+          <p>
+            <strong>Ponto de entrada:</strong> {formatBRL(plan.entry)}
+          </p>
+          <p>
+            <strong>Stop Loss:</strong> {formatBRL(plan.stop)}
+          </p>
+          <p>
+            <strong>Take Profit:</strong> {formatBRL(plan.target)}
+          </p>
+          <p>
+            <strong>Risco/Retorno:</strong>{" "}
+            {plan.rr != null ? `1:${plan.rr.toFixed(2)}` : "--"}
+          </p>
+          <p>
+            <strong>Leitura:</strong> {plan.explanation}
+          </p>
+          <p>
+            <strong>{reasonLabel}:</strong> {plan.brooksReason}
+          </p>
+          <p>
+            <strong>{referenceLabel}:</strong> {plan.brooksReference}
+          </p>
         </>
       )}
     </div>
@@ -835,10 +1082,69 @@ function ConfluenceBox({
       }}
     >
       <h2 style={{ marginTop: 0 }}>Confluência Multi-Timeframe</h2>
-      <p><strong>Semanal:</strong> {weeklyPlan.action} • {weeklyPlan.grade} • {weeklyPlan.probability != null ? `${weeklyPlan.probability}%` : "--"}</p>
-      <p><strong>Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} • {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}</p>
-      <p><strong>4h:</strong> {h4Plan.action} • {h4Plan.grade} • {h4Plan.probability != null ? `${h4Plan.probability}%` : "--"}</p>
-      <p style={{ marginBottom: 0 }}><strong>Leitura combinada:</strong> {message}</p>
+
+      <p>
+        <strong>Semanal:</strong> {weeklyPlan.action} • {weeklyPlan.grade} •{" "}
+        {weeklyPlan.probability != null ? `${weeklyPlan.probability}%` : "--"}
+      </p>
+
+      <p>
+        <strong>Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} •{" "}
+        {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}
+      </p>
+
+      <p>
+        <strong>4h:</strong> {h4Plan.action} • {h4Plan.grade} •{" "}
+        {h4Plan.probability != null ? `${h4Plan.probability}%` : "--"}
+      </p>
+
+      <p style={{ marginBottom: 0 }}>
+        <strong>Leitura combinada:</strong> {message}
+      </p>
+    </div>
+  );
+}
+
+function PalexConfluenceBox({
+  dailyPlan,
+  palexDailyPlan,
+}: {
+  dailyPlan: TradePlan | null;
+  palexDailyPlan: TradePlan | null;
+}) {
+  if (!dailyPlan || !palexDailyPlan) return null;
+
+  const aligned = calculateAlignment(dailyPlan, palexDailyPlan);
+
+  return (
+    <div
+      style={{
+        background: aligned ? "#052e16" : "#111827",
+        color: "#fff",
+        padding: 18,
+        borderRadius: 16,
+        border: aligned ? "1px solid #22c55e" : "1px solid #374151",
+        marginBottom: 20,
+      }}
+    >
+      <h2 style={{ marginTop: 0 }}>Confluência Diário x PALEX</h2>
+
+      <p>
+        <strong>Al Brooks Diário:</strong> {dailyPlan.action} • {dailyPlan.grade} •{" "}
+        {dailyPlan.probability != null ? `${dailyPlan.probability}%` : "--"}
+      </p>
+
+      <p>
+        <strong>PALEX Diário:</strong> {palexDailyPlan.action} • {palexDailyPlan.grade} •{" "}
+        {palexDailyPlan.probability != null ? `${palexDailyPlan.probability}%` : "--"}
+      </p>
+
+      <p style={{ marginBottom: 0 }}>
+        <strong>Leitura:</strong>{" "}
+        {aligned
+          ? "Há alinhamento entre a leitura diária Al Brooks e a leitura PALEX. O ativo recebe bônus no ranking."
+          : "As leituras diária Al Brooks e PALEX não estão totalmente alinhadas. A operação exige mais confirmação."}
+      </p>
     </div>
   );
 }
@@ -877,7 +1183,9 @@ export default function Page() {
         const weekly = buildTradePlan(weeklyCandles, "WEEKLY");
         const daily = buildTradePlan(dailyCandles, "DAILY");
         const h4 = buildTradePlan(h4Candles, "H4");
+        const palexDaily = buildPalexPlanDaily(dailyCandles);
 
+        const aligned = calculateAlignment(daily, palexDaily);
         const score = getCombinedScore(weekly, daily, h4);
 
         return {
@@ -887,15 +1195,18 @@ export default function Page() {
           weekly,
           daily,
           h4,
-          score,
+          palexDaily,
+          score: aligned ? score + 25 : score,
         } as ScannerItem;
       })
     );
 
     const sorted = results.sort((a, b) => b.score - a.score);
+
     setScanner(sorted);
 
     if (sorted.length > 0 && !selectedItem) setSelectedItem(sorted[0]);
+
     if (sorted.length > 0 && selectedItem) {
       const found = sorted.find((s) => s.ticker === selectedItem.ticker);
       setSelectedItem(found || sorted[0]);
@@ -919,9 +1230,11 @@ export default function Page() {
       }}
     >
       <div style={{ maxWidth: 1600, margin: "0 auto" }}>
-        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Scanner Weekly + Daily + 4H</h1>
+        <h1 style={{ marginTop: 0 }}>Brooks Brazil — Scanner Weekly + Daily + 4H + PALEX</h1>
+
         <p style={{ color: "#bbb" }}>
-          Ranking com confluência de 3 timeframes, probabilidade, nota, entrada, stop, alvo e justificativa Brooks.
+          Ranking com confluência de 3 timeframes Al Brooks, probabilidade, nota, entrada,
+          stop, alvo e uma leitura PALEX exclusiva para o gráfico diário.
         </p>
 
         <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
@@ -981,84 +1294,114 @@ export default function Page() {
             }}
           >
             <h2 style={{ marginTop: 0 }}>Ranking</h2>
+
             {loadingScanner && <p>Atualizando scanner...</p>}
 
             {!loadingScanner &&
-              scanner.map((item, index) => (
-                <button
-                  key={item.ticker}
-                  onClick={() => setSelectedItem(item)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    background:
-                      selectedItem?.ticker === item.ticker ? "#1f2937" : "#171717",
-                    color: "#fff",
-                    border: "1px solid #2a2a2a",
-                    borderRadius: 12,
-                    padding: 14,
-                    marginBottom: 10,
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>
-                        #{index + 1} • {item.ticker}
+              scanner.map((item, index) => {
+                const palexAligned = calculateAlignment(item.daily, item.palexDaily);
+
+                return (
+                  <button
+                    key={item.ticker}
+                    onClick={() => setSelectedItem(item)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      background:
+                        selectedItem?.ticker === item.ticker ? "#1f2937" : "#171717",
+                      color: "#fff",
+                      border: palexAligned ? "1px solid #22c55e" : "1px solid #2a2a2a",
+                      borderRadius: 12,
+                      padding: 14,
+                      marginBottom: 10,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 700 }}>
+                          #{index + 1} • {item.ticker}
+                        </div>
+
+                        <div style={{ fontSize: 13, color: "#bbb" }}>{item.name}</div>
+
+                        <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
+                          {item.sector}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 13, color: "#bbb" }}>{item.name}</div>
-                      <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>
-                        {item.sector}
+
+                      <div style={{ textAlign: "right" }}>
+                        <div
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: getGradeColor(item.weekly.grade),
+                            fontWeight: 700,
+                            marginBottom: 4,
+                          }}
+                        >
+                          W {item.weekly.grade}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: getGradeColor(item.daily.grade),
+                            fontWeight: 700,
+                            marginBottom: 4,
+                          }}
+                        >
+                          D {item.daily.grade}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: getGradeColor(item.h4.grade),
+                            fontWeight: 700,
+                            marginBottom: 4,
+                          }}
+                        >
+                          4H {item.h4.grade}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 8px",
+                            borderRadius: 999,
+                            background: getGradeColor(item.palexDaily.grade),
+                            fontWeight: 700,
+                          }}
+                        >
+                          P {item.palexDaily.grade}
+                        </div>
                       </div>
                     </div>
 
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          display: "inline-block",
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: getGradeColor(item.weekly.grade),
-                          fontWeight: 700,
-                          marginBottom: 4,
-                        }}
-                      >
-                        W {item.weekly.grade}
-                      </div>
-                      <div
-                        style={{
-                          display: "inline-block",
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: getGradeColor(item.daily.grade),
-                          fontWeight: 700,
-                          marginBottom: 4,
-                        }}
-                      >
-                        D {item.daily.grade}
-                      </div>
-                      <div
-                        style={{
-                          display: "inline-block",
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          background: getGradeColor(item.h4.grade),
-                          fontWeight: 700,
-                        }}
-                      >
-                        4H {item.h4.grade}
-                      </div>
+                    <div style={{ marginTop: 10, fontSize: 13 }}>
+                      <strong>Score:</strong> {item.score.toFixed(0)}
                     </div>
-                  </div>
 
-                  <div style={{ marginTop: 10, fontSize: 13 }}>
-                    <strong>Score:</strong> {item.score.toFixed(0)}
-                  </div>
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#bbb" }}>
-                    W: {item.weekly.action} • D: {item.daily.action} • 4H: {item.h4.action}
-                  </div>
-                </button>
-              ))}
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#bbb" }}>
+                      W: {item.weekly.action} • D: {item.daily.action} • 4H:{" "}
+                      {item.h4.action} • PALEX: {item.palexDaily.action}
+                    </div>
+
+                    {palexAligned && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: "#86efac" }}>
+                        Diário Brooks alinhado com PALEX
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
           </div>
 
           <div>
@@ -1075,17 +1418,46 @@ export default function Page() {
                   h4Plan={selectedItem.h4}
                 />
 
+                <PalexConfluenceBox
+                  dailyPlan={selectedItem.daily}
+                  palexDailyPlan={selectedItem.palexDaily}
+                />
+
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
                     gap: 14,
                     alignItems: "start",
                   }}
                 >
-                  <AnalysisCard title={`Semanal — ${selectedItem.ticker}`} plan={selectedItem.weekly} />
-                  <AnalysisCard title={`Diário — ${selectedItem.ticker}`} plan={selectedItem.daily} />
-                  <AnalysisCard title={`4H — ${selectedItem.ticker}`} plan={selectedItem.h4} />
+                  <AnalysisCard
+                    title={`Semanal — ${selectedItem.ticker}`}
+                    plan={selectedItem.weekly}
+                    reasonLabel="Justificativa Brooks"
+                    referenceLabel="Base Teórica Brooks"
+                  />
+
+                  <AnalysisCard
+                    title={`Diário — ${selectedItem.ticker}`}
+                    plan={selectedItem.daily}
+                    reasonLabel="Justificativa Brooks"
+                    referenceLabel="Base Teórica Brooks"
+                  />
+
+                  <AnalysisCard
+                    title={`4H — ${selectedItem.ticker}`}
+                    plan={selectedItem.h4}
+                    reasonLabel="Justificativa Brooks"
+                    referenceLabel="Base Teórica Brooks"
+                  />
+
+                  <AnalysisCard
+                    title={`Sugestão PALEX — ${selectedItem.ticker}`}
+                    plan={selectedItem.palexDaily}
+                    reasonLabel="Justificativa PALEX"
+                    referenceLabel="Base Teórica PALEX"
+                  />
                 </div>
               </>
             ) : (
