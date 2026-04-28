@@ -616,151 +616,6 @@ function buildTradePlan(candles: Candle[], timeframe: TF): TradePlan {
   };
 }
 
-
-function sma(values: number[], period: number) {
-  if (values.length < period) return null;
-  return average(values.slice(-period));
-}
-
-function smaAt(values: number[], period: number, endExclusive: number) {
-  if (endExclusive < period) return null;
-  return average(values.slice(endExclusive - period, endExclusive));
-}
-
-function stdDev(values: number[]) {
-  if (!values.length) return 0;
-  const avg = average(values);
-  const variance = average(values.map((v) => Math.pow(v - avg, 2)));
-  return Math.sqrt(variance);
-}
-
-function emaSeries(values: number[], period: number) {
-  if (!values.length) return [];
-  const k = 2 / (period + 1);
-  const result: number[] = [];
-  let ema = values[0];
-  for (let i = 0; i < values.length; i++) {
-    ema = i === 0 ? values[i] : values[i] * k + ema * (1 - k);
-    result.push(ema);
-  }
-  return result;
-}
-
-function rsiSeries(values: number[], period = 14) {
-  if (values.length < period + 1) return [];
-  const rsis: number[] = Array(period).fill(50);
-  let gains = 0;
-  let losses = 0;
-
-  for (let i = 1; i <= period; i++) {
-    const diff = values[i] - values[i - 1];
-    if (diff >= 0) gains += diff;
-    else losses += Math.abs(diff);
-  }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-  rsis.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
-
-  for (let i = period + 1; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
-    const gain = Math.max(diff, 0);
-    const loss = Math.max(-diff, 0);
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-    rsis.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
-  }
-
-  return rsis;
-}
-
-function highestHigh(candles: Candle[], lookback: number, offsetFromEnd = 0) {
-  const end = candles.length - offsetFromEnd;
-  const slice = candles.slice(Math.max(0, end - lookback), end);
-  return slice.length ? Math.max(...slice.map((c) => c.high)) : null;
-}
-
-function lowestLow(candles: Candle[], lookback: number, offsetFromEnd = 0) {
-  const end = candles.length - offsetFromEnd;
-  const slice = candles.slice(Math.max(0, end - lookback), end);
-  return slice.length ? Math.min(...slice.map((c) => c.low)) : null;
-}
-
-function volumeAverage(candles: Candle[], lookback = 20) {
-  return average(getLast(candles, lookback).map((c) => c.volume || 0));
-}
-
-function isGapUp(current: Candle, previous: Candle, minPct = 0.003) {
-  return current.open > previous.high * (1 + minPct);
-}
-
-function isGapDown(current: Candle, previous: Candle, minPct = 0.003) {
-  return current.open < previous.low * (1 - minPct);
-}
-
-function lowerShadow(c: Candle) {
-  return Math.min(c.open, c.close) - c.low;
-}
-
-function upperShadow(c: Candle) {
-  return c.high - Math.max(c.open, c.close);
-}
-
-function isBullishReversalCandle(c: Candle) {
-  const range = barRange(c);
-  if (range <= 0) return false;
-  return isBullBar(c) && c.close >= c.low + range * 0.6 && lowerShadow(c) >= barBody(c) * 0.6;
-}
-
-function isBearishReversalCandle(c: Candle) {
-  const range = barRange(c);
-  if (range <= 0) return false;
-  return isBearBar(c) && c.close <= c.low + range * 0.4 && upperShadow(c) >= barBody(c) * 0.6;
-}
-
-function detectThreeLineBarDirection(candles: Candle[]): TrendState {
-  if (candles.length < 4) return "RANGE";
-  const last = candles[candles.length - 1];
-  const prev3 = candles.slice(-4, -1);
-  if (last.close > Math.max(...prev3.map((c) => c.high))) return "BULL";
-  if (last.close < Math.min(...prev3.map((c) => c.low))) return "BEAR";
-  return "RANGE";
-}
-
-type PalexCandidate = {
-  action: Action;
-  setup: string;
-  score: number;
-  entry: number;
-  stop: number;
-  target: number;
-  context: string;
-  explanation: string;
-  reference: string;
-};
-
-function buildCandidate(params: {
-  action: Exclude<Action, "AGUARDAR">;
-  setup: string;
-  score: number;
-  entry: number;
-  stop: number;
-  context: string;
-  explanation: string;
-  reference: string;
-  multiplier?: number;
-}): PalexCandidate | null {
-  if (!Number.isFinite(params.entry) || !Number.isFinite(params.stop)) return null;
-  if (Math.abs(params.entry - params.stop) <= 0) return null;
-  const target = getMeasuredMoveTarget(
-    params.entry,
-    params.stop,
-    params.action === "COMPRA" ? "LONG" : "SHORT",
-    params.multiplier ?? 2
-  );
-  return { ...params, target };
-}
-
 function buildPalexPlanDaily(candles: Candle[]): TradePlan {
   if (candles.length < 60) {
     return {
@@ -772,617 +627,456 @@ function buildPalexPlanDaily(candles: Candle[]): TradePlan {
       stop: null,
       target: null,
       rr: null,
-      explanation: "São necessários pelo menos 60 candles diários para aplicar os filtros PALEX com médias, IFR, Bollinger, rompimentos, gaps e seleção de força.",
-      brooksReason: "Leitura PALEX indisponível por insuficiência de dados diários.",
+      explanation:
+        "Não há candles diários suficientes para aplicar a leitura PALEX com Quality Engine. Use pelo menos 60 candles; com 200 candles a leitura da MM200 fica mais robusta.",
+      brooksReason: "Leitura PALEX indisponível por insuficiência de dados.",
       brooksReference:
-        "PALEX — Estratégias Operacionais de Análise Técnica de Ações: setups com MME9, MM21, MM200, Bollinger, IFR, gaps, rompimentos, seleção por tendência e controle de risco.",
+        "PALEX — fundamentos de análise técnica: tendência, suporte/resistência, volume, OBV, médias, IFR, Bollinger, ADX/DI, Fibonacci, estopes e plano de trade.",
       probability: null,
       grade: "Neutro",
     };
   }
 
   const closes = candles.map((c) => c.close);
-  const highs = candles.map((c) => c.high);
-  const lows = candles.map((c) => c.low);
+  const volumes = candles.map((c) => c.volume || 0);
+  const avg = (values: number[]) =>
+    values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+
+  const smaLocal = (period: number) =>
+    candles.length >= period ? avg(closes.slice(-period)) : null;
+
+  const emaFromValues = (values: number[], period: number) => {
+    if (values.length < period) return null;
+    const k = 2 / (period + 1);
+    let v = avg(values.slice(0, period));
+    for (let i = period; i < values.length; i++) v = values[i] * k + v * (1 - k);
+    return v;
+  };
+
+  const rsiLocal = (period: number) => {
+    if (candles.length < period + 1) return null;
+    const slice = closes.slice(-(period + 1));
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = 1; i < slice.length; i++) {
+      const ch = slice[i] - slice[i - 1];
+      if (ch >= 0) gains += ch;
+      else losses += Math.abs(ch);
+    }
+
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - 100 / (1 + rs);
+  };
+
+  const slope = (values: number[]) => {
+    if (values.length < 2) return 0;
+    const n = values.length;
+    const ax = (n + 1) / 2;
+    const ay = avg(values);
+    let num = 0;
+    let den = 0;
+
+    for (let i = 0; i < n; i++) {
+      const x = i + 1;
+      num += (x - ax) * (values[i] - ay);
+      den += (x - ax) ** 2;
+    }
+
+    return den === 0 ? 0 : num / den;
+  };
+
+  const obvLocal = () => {
+    const values = [0];
+
+    for (let i = 1; i < candles.length; i++) {
+      const last = values[values.length - 1];
+      if (candles[i].close > candles[i - 1].close) values.push(last + candles[i].volume);
+      else if (candles[i].close < candles[i - 1].close) values.push(last - candles[i].volume);
+      else values.push(last);
+    }
+
+    return values;
+  };
+
+  const bbLocal = () => {
+    const period = 20;
+    if (closes.length < period) return null;
+
+    const recent = closes.slice(-period);
+    const middle = avg(recent);
+    const dev = Math.sqrt(avg(recent.map((v) => (v - middle) ** 2)));
+
+    return {
+      upper: middle + 2 * dev,
+      middle,
+      lower: middle - 2 * dev,
+      bandwidth: middle > 0 ? ((4 * dev) / middle) * 100 : 0,
+    };
+  };
+
+  const adxLocal = () => {
+    const period = 14;
+
+    if (candles.length < period + 2) {
+      return {
+        adx: null as number | null,
+        plusDI: null as number | null,
+        minusDI: null as number | null,
+      };
+    }
+
+    const tr: number[] = [];
+    const plus: number[] = [];
+    const minus: number[] = [];
+
+    for (let i = 1; i < candles.length; i++) {
+      const c = candles[i];
+      const p = candles[i - 1];
+      const up = c.high - p.high;
+      const down = p.low - c.low;
+
+      plus.push(up > down && up > 0 ? up : 0);
+      minus.push(down > up && down > 0 ? down : 0);
+      tr.push(Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+    }
+
+    const trSum = tr.slice(-period).reduce((a, b) => a + b, 0);
+    if (trSum <= 0) return { adx: null, plusDI: null, minusDI: null };
+
+    const plusDI = (plus.slice(-period).reduce((a, b) => a + b, 0) / trSum) * 100;
+    const minusDI = (minus.slice(-period).reduce((a, b) => a + b, 0) / trSum) * 100;
+    const adx = (Math.abs(plusDI - minusDI) / Math.max(plusDI + minusDI, 1)) * 100;
+
+    return { adx, plusDI, minusDI };
+  };
+
+  const near = (price: number, level: number, tol = 2) =>
+    price > 0 && level > 0 ? Math.abs(price - level) / price <= tol / 100 : false;
+
+  const trend = detectTrendState(candles);
   const signal = candles[candles.length - 1];
   const prior = candles[candles.length - 2];
-  const beforePrior = candles[candles.length - 3];
   const quality = signalBarQuality(signal);
   const vola = atr(candles, 14);
   const tick = Math.max(0.01, vola * 0.03);
 
-  const ema9 = emaSeries(closes, 9);
-  const ema10 = emaSeries(closes, 10);
-  const ema21 = emaSeries(closes, 21);
-  const ema50 = emaSeries(closes, 50);
-  const sma21 = sma(closes, 21) ?? signal.close;
-  const sma50 = sma(closes, 50) ?? signal.close;
-  const sma200 = sma(closes, 200);
-  const rsi14 = rsiSeries(closes, 14);
-  const rsi6 = rsiSeries(closes, 6);
-  const rsi2 = rsiSeries(closes, 2);
-  const lastRsi14 = rsi14[rsi14.length - 1] ?? 50;
-  const priorRsi14 = rsi14[rsi14.length - 2] ?? 50;
-  const lastRsi6 = rsi6[rsi6.length - 1] ?? 50;
-  const priorRsi6 = rsi6[rsi6.length - 2] ?? 50;
-  const lastRsi2 = rsi2[rsi2.length - 1] ?? 50;
-
-  const last20 = getLast(candles, 20);
   const last10 = getLast(candles, 10);
-  const avgRange20 = average(last20.map(barRange));
+  const last20 = getLast(candles, 20);
+  const last60 = getLast(candles, 60);
+
+  const recentHigh10 = Math.max(...last10.map((c) => c.high));
+  const recentLow10 = Math.min(...last10.map((c) => c.low));
+  const recentHigh20 = Math.max(...last20.map((c) => c.high));
+  const recentLow20 = Math.min(...last20.map((c) => c.low));
+  const support60 = Math.min(...last60.map((c) => c.low));
+  const resistance60 = Math.max(...last60.map((c) => c.high));
+  const avgRange20 = avg(last20.map(barRange));
+  const avgVolume20 = avg(volumes.slice(-20));
   const currentRange = barRange(signal);
-  const avgVolume20 = volumeAverage(candles, 20);
-  const volumeExpansion = avgVolume20 > 0 && signal.volume > avgVolume20 * 1.2;
+
   const expansionBar = avgRange20 > 0 && currentRange >= avgRange20 * 1.15;
-  const narrowRange = avgRange20 > 0 && currentRange <= avgRange20 * 0.65;
   const bullCloseStrength = currentRange > 0 && signal.close >= signal.low + currentRange * 0.65;
   const bearCloseStrength = currentRange > 0 && signal.close <= signal.low + currentRange * 0.35;
+  const volumeExpansion = avgVolume20 > 0 && signal.volume >= avgVolume20 * 1.2;
+  const volumeDryUp = avgVolume20 > 0 && signal.volume <= avgVolume20 * 0.75;
 
-  const high20Prev = highestHigh(candles, 20, 1) ?? prior.high;
-  const low20Prev = lowestLow(candles, 20, 1) ?? prior.low;
-  const high10Prev = highestHigh(candles, 10, 1) ?? prior.high;
-  const low10Prev = lowestLow(candles, 10, 1) ?? prior.low;
-  const high5Prev = highestHigh(candles, 5, 1) ?? prior.high;
-  const low5Prev = lowestLow(candles, 5, 1) ?? prior.low;
+  const mm21 = smaLocal(21);
+  const mm50 = emaFromValues(closes, 50);
+  const mm200 = smaLocal(200);
+  const ema9 = emaFromValues(closes, 9);
+  const ema9Prev = emaFromValues(closes.slice(0, -1), 9);
+  const rsi14 = rsiLocal(14);
+  const rsi2 = rsiLocal(2);
+  const bb = bbLocal();
+  const dm = adxLocal();
+  const obvSlope = slope(obvLocal().slice(-10));
+  const priceSlope = slope(closes.slice(-10));
 
-  const ma9Now = ema9[ema9.length - 1];
-  const ma9Prev = ema9[ema9.length - 2];
-  const ma10Now = ema10[ema10.length - 1];
-  const ma21Now = ema21[ema21.length - 1];
-  const ma21Prev = ema21[ema21.length - 2];
-  const ma50Now = ema50[ema50.length - 1];
+  const priceAboveMM21 = mm21 != null && signal.close > mm21;
+  const priceBelowMM21 = mm21 != null && signal.close < mm21;
+  const priceAboveMM50 = mm50 != null && signal.close > mm50;
+  const priceBelowMM50 = mm50 != null && signal.close < mm50;
+  const priceAboveMM200 = mm200 != null && signal.close > mm200;
+  const priceBelowMM200 = mm200 != null && signal.close < mm200;
+  const ema9Up = ema9 != null && ema9Prev != null && ema9 > ema9Prev;
+  const ema9Down = ema9 != null && ema9Prev != null && ema9 < ema9Prev;
 
-  const topBottomTrend = detectTrendState(candles);
-  const threeLine = detectThreeLineBarDirection(candles);
-  const maDirection = ma21Now > ma21Prev ? "BULL" : ma21Now < ma21Prev ? "BEAR" : "RANGE";
-  const priceVsMa21 = signal.close > sma21 ? "BULL" : signal.close < sma21 ? "BEAR" : "RANGE";
-  const ma9VsMa21 = ma9Now > ma21Now ? "BULL" : ma9Now < ma21Now ? "BEAR" : "RANGE";
-  const bullCriteria = [topBottomTrend, maDirection, priceVsMa21, ma9VsMa21, threeLine].filter((v) => v === "BULL").length;
-  const bearCriteria = [topBottomTrend, maDirection, priceVsMa21, ma9VsMa21, threeLine].filter((v) => v === "BEAR").length;
-  const palexTrend: TrendState = bullCriteria >= 3 ? "BULL" : bearCriteria >= 3 ? "BEAR" : "RANGE";
+  const nearSupport = near(signal.close, support60, 3);
+  const nearResistance = near(signal.close, resistance60, 3);
 
-  const bbMid = sma(closes, 20) ?? signal.close;
-  const bbStd = stdDev(closes.slice(-20));
-  const bbUpper = bbMid + 2 * bbStd;
-  const bbLower = bbMid - 2 * bbStd;
-  const prevBbMid = smaAt(closes, 20, closes.length - 1) ?? prior.close;
-  const prevBbStd = stdDev(closes.slice(-21, -1));
-  const prevBbUpper = prevBbMid + 2 * prevBbStd;
-  const prevBbLower = prevBbMid - 2 * prevBbStd;
-  const bbWidth = bbMid !== 0 ? (bbUpper - bbLower) / bbMid : 0;
-  const prevBbWidth = prevBbMid !== 0 ? (prevBbUpper - prevBbLower) / prevBbMid : 0;
+  const upperShadow = signal.high - Math.max(signal.open, signal.close);
+  const lowerShadow = Math.min(signal.open, signal.close) - signal.low;
+  const rejectionBuy = currentRange > 0 && lowerShadow / currentRange >= 0.45 && isBullBar(signal);
+  const rejectionSell = currentRange > 0 && upperShadow / currentRange >= 0.45 && isBearBar(signal);
 
-  const candidates: PalexCandidate[] = [];
-  const push = (candidate: PalexCandidate | null) => {
-    if (candidate) candidates.push(candidate);
+  const adxTrending = dm.adx != null && dm.adx >= 25;
+  const adxDormant = dm.adx != null && dm.adx < 20;
+  const diBull = dm.plusDI != null && dm.minusDI != null && dm.plusDI > dm.minusDI;
+  const diBear = dm.plusDI != null && dm.minusDI != null && dm.minusDI > dm.plusDI;
+
+  const falseBreakDown =
+    signal.low < recentLow10 &&
+    signal.close > recentLow10 &&
+    signal.close > prior.close &&
+    bullCloseStrength &&
+    isBullBar(signal);
+
+  const falseBreakUp =
+    signal.high > recentHigh10 &&
+    signal.close < recentHigh10 &&
+    signal.close < prior.close &&
+    bearCloseStrength &&
+    isBearBar(signal);
+
+  const bullBreakout =
+    signal.close > recentHigh20 * 0.998 && isBullBar(signal) && bullCloseStrength && expansionBar;
+
+  const bearBreakout =
+    signal.close < recentLow20 * 1.002 && isBearBar(signal) && bearCloseStrength && expansionBar;
+
+  const pointContinuoBuy =
+    mm21 != null &&
+    priceAboveMM21 &&
+    near(signal.low, mm21, 2.5) &&
+    signal.high > prior.high &&
+    isBullBar(signal);
+
+  const pointContinuoSell =
+    mm21 != null &&
+    priceBelowMM21 &&
+    near(signal.high, mm21, 2.5) &&
+    signal.low < prior.low &&
+    isBearBar(signal);
+
+  const setup91Buy = ema9Up && isBullBar(signal) && signal.high > prior.high;
+  const setup91Sell = ema9Down && isBearBar(signal) && signal.low < prior.low;
+
+  const ifr2Buy = rsi2 != null && rsi2 <= 15 && priceAboveMM50 && isBullBar(signal);
+  const ifr2Sell = rsi2 != null && rsi2 >= 85 && priceBelowMM50 && isBearBar(signal);
+
+  const bollBuy = bb != null && signal.low < bb.lower && signal.close > bb.lower && rejectionBuy;
+  const bollSell = bb != null && signal.high > bb.upper && signal.close < bb.upper && rejectionSell;
+
+  const bullContinuation =
+    trend === "BULL" &&
+    isBullBar(signal) &&
+    bullCloseStrength &&
+    signal.high > prior.high &&
+    priceAboveMM21 &&
+    ema9Up;
+
+  const bearContinuation =
+    trend === "BEAR" &&
+    isBearBar(signal) &&
+    bearCloseStrength &&
+    signal.low < prior.low &&
+    priceBelowMM21 &&
+    ema9Down;
+
+  let action: Action = "AGUARDAR";
+  let setup = "PALEX — Aguardar";
+  let entry: number | null = null;
+  let stop: number | null = null;
+  let target: number | null = null;
+  let explanation =
+    "A leitura PALEX diária não encontrou assimetria suficiente após aplicar o Quality Engine. Melhor aguardar nova barra de força, rompimento confirmado ou falha em região relevante.";
+
+  const context =
+    trend === "BULL" ? "PALEX Bull" : trend === "BEAR" ? "PALEX Bear" : "PALEX Range";
+
+  if (falseBreakDown || bollBuy) {
+    action = "COMPRA";
+    setup = falseBreakDown ? "PALEX — Falha Vendedora" : "PALEX — Bollinger FFFD/Reversão";
+    entry = signal.high + tick;
+    stop = Math.min(signal.low, recentLow10);
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "Compra PALEX por rejeição/falha em região inferior: houve perda de mínima ou extrapolação de volatilidade, mas o candle fechou com recuperação. Entrada acima da máxima do candle de sinal e stop abaixo da região rejeitada.";
+  } else if (falseBreakUp || bollSell) {
+    action = "VENDA";
+    setup = falseBreakUp ? "PALEX — Falha Compradora" : "PALEX — Bollinger FFFD/Reversão";
+    entry = signal.low - tick;
+    stop = Math.max(signal.high, recentHigh10);
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "Venda PALEX por rejeição/falha em região superior: houve rompimento de máxima ou extrapolação de volatilidade, mas o candle fechou com pressão vendedora. Entrada abaixo da mínima do candle de sinal e stop acima da região rejeitada.";
+  } else if (pointContinuoBuy) {
+    action = "COMPRA";
+    setup = "PALEX — Ponto Contínuo MM21";
+    entry = signal.high + tick;
+    stop = Math.min(signal.low, getRecentSwingLow(candles, 8));
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "Compra PALEX por Ponto Contínuo: preço corrigiu até a MM21 diária e voltou a acionar compra acima da máxima do candle, mantendo leitura de continuidade.";
+  } else if (pointContinuoSell) {
+    action = "VENDA";
+    setup = "PALEX — Ponto Contínuo MM21";
+    entry = signal.low - tick;
+    stop = Math.max(signal.high, getRecentSwingHigh(candles, 8));
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "Venda PALEX por Ponto Contínuo: preço corrigiu até a MM21 diária e voltou a acionar venda abaixo da mínima do candle, mantendo leitura de continuidade baixista.";
+  } else if (bullBreakout) {
+    action = "COMPRA";
+    setup = "PALEX — Rompimento Comprador";
+    entry = signal.high + tick;
+    stop = Math.min(recentLow10, signal.low);
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "Compra PALEX por rompimento comprador diário com expansão de range. O Quality Engine valida volume, OBV, médias, ADX/DI e distância de resistência.";
+  } else if (bearBreakout) {
+    action = "VENDA";
+    setup = "PALEX — Rompimento Vendedor";
+    entry = signal.low - tick;
+    stop = Math.max(recentHigh10, signal.high);
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "Venda PALEX por rompimento vendedor diário com expansão de range. O Quality Engine valida volume, OBV, médias, ADX/DI e distância de suporte.";
+  } else if (bullContinuation || setup91Buy || ifr2Buy) {
+    action = "COMPRA";
+    setup = setup91Buy
+      ? "PALEX — Setup MME9 / 9.1"
+      : ifr2Buy
+      ? "PALEX — IFR2 com filtro de tendência"
+      : "PALEX — Continuação Compradora";
+    entry = signal.high + tick;
+    stop = Math.min(signal.low, getRecentSwingLow(candles, 10));
+    target = getMeasuredMoveTarget(entry, stop, "LONG", 2);
+    explanation =
+      "Compra PALEX por continuidade no diário: tendência, média móvel e/ou IFR2 sugerem correção com chance de retomada. Entrada acima da máxima do candle de sinal.";
+  } else if (bearContinuation || setup91Sell || ifr2Sell) {
+    action = "VENDA";
+    setup = setup91Sell
+      ? "PALEX — Setup MME9 / 9.1"
+      : ifr2Sell
+      ? "PALEX — IFR2 com filtro de tendência"
+      : "PALEX — Continuação Vendedora";
+    entry = signal.low - tick;
+    stop = Math.max(signal.high, getRecentSwingHigh(candles, 10));
+    target = getMeasuredMoveTarget(entry, stop, "SHORT", 2);
+    explanation =
+      "Venda PALEX por continuidade no diário: tendência, média móvel e/ou IFR2 sugerem correção com chance de retomada da baixa. Entrada abaixo da mínima do candle de sinal.";
+  }
+
+  const rr =
+    entry != null && stop != null && target != null && Math.abs(entry - stop) > 0
+      ? Math.abs(target - entry) / Math.abs(entry - stop)
+      : null;
+
+  let probability = 50;
+  const positives: string[] = [];
+  const warnings: string[] = [];
+
+  const plus = (ok: boolean, pts: number, msg: string) => {
+    if (ok) {
+      probability += pts;
+      positives.push(msg);
+    }
   };
 
-  const bullishEngulfing = isBullBar(signal) && isBearBar(prior) && signal.close > prior.open && signal.open <= prior.close;
-  const bearishEngulfing = isBearBar(signal) && isBullBar(prior) && signal.close < prior.open && signal.open >= prior.close;
-  const bullishHarami = isBullBar(signal) && isBearBar(prior) && signal.high < prior.high && signal.low > prior.low;
-  const bearishHarami = isBearBar(signal) && isBullBar(prior) && signal.high < prior.high && signal.low > prior.low;
-  const insideDay = signal.high < prior.high && signal.low > prior.low;
+  const minus = (ok: boolean, pts: number, msg: string) => {
+    if (ok) {
+      probability -= pts;
+      warnings.push(msg);
+    }
+  };
 
-  // 1) Médias móveis: MME9, MM21, Linha da Sombra, cruzamentos, MM200.
-  if (palexTrend === "BULL" && signal.low <= ma9Now && signal.close > ma9Now && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Setup MME9 / retorno à média curta",
-      score: 72 + (bullCriteria - bearCriteria) * 3,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, low5Prev),
-      context: "PALEX Bull por tendência e médias",
-      explanation: "Compra pelo retorno controlado à MME9 em tendência de alta, com fechamento comprador e retomada acima da máxima do candle de sinal.",
-      reference: "PALEX: setups 9.1, 9.2, 9.3 e 9.4 com MME9, congruência, suporte/resistência e realinhamento.",
-    }));
+  if (action === "COMPRA") {
+    plus(trend === "BULL", 8, "tendência diária favorece compra");
+    plus(priceAboveMM21, 6, "preço acima da MM21");
+    plus(ema9Up, 5, "MME9 virada para cima");
+    plus(priceAboveMM50, 5, "preço acima da MME50");
+    plus(priceAboveMM200, 4, "preço acima da MM200");
+    plus(volumeExpansion, 7, "volume acima da média");
+    plus(obvSlope > 0, 7, "OBV em acumulação");
+    plus(adxTrending && diBull, 7, "ADX/DI confirma força compradora");
+    plus(nearSupport || rejectionBuy, 5, "rejeição/proximidade de suporte");
+    plus(rsi14 != null && rsi14 > 50 && rsi14 < 75, 4, "IFR14 saudável");
+    plus(rsi2 != null && rsi2 < 15 && priceAboveMM50, 4, "IFR2 sobrevendido com filtro de tendência");
+
+    minus(trend === "BEAR", 10, "tendência diária ainda baixista");
+    minus(priceBelowMM21, 6, "preço abaixo da MM21");
+    minus(priceBelowMM50, 5, "preço abaixo da MME50");
+    minus(priceBelowMM200, 4, "preço abaixo da MM200");
+    minus(nearResistance, 5, "entrada próxima de resistência");
+    minus(volumeDryUp && setup.includes("Rompimento"), 8, "rompimento sem volume");
+    minus(obvSlope < 0 && priceSlope > 0, 7, "divergência baixista entre preço e OBV");
+    minus(adxDormant && setup.includes("Continuação"), 5, "ADX baixo para continuação");
+    minus(rsi14 != null && rsi14 > 78, 4, "IFR14 esticado");
+  } else if (action === "VENDA") {
+    plus(trend === "BEAR", 8, "tendência diária favorece venda");
+    plus(priceBelowMM21, 6, "preço abaixo da MM21");
+    plus(ema9Down, 5, "MME9 virada para baixo");
+    plus(priceBelowMM50, 5, "preço abaixo da MME50");
+    plus(priceBelowMM200, 4, "preço abaixo da MM200");
+    plus(volumeExpansion, 7, "volume acima da média");
+    plus(obvSlope < 0, 7, "OBV em distribuição");
+    plus(adxTrending && diBear, 7, "ADX/DI confirma força vendedora");
+    plus(nearResistance || rejectionSell, 5, "rejeição/proximidade de resistência");
+    plus(rsi14 != null && rsi14 < 50 && rsi14 > 25, 4, "IFR14 confirma momentum vendedor");
+
+    minus(trend === "BULL", 10, "tendência diária ainda altista");
+    minus(priceAboveMM21, 6, "preço acima da MM21");
+    minus(priceAboveMM50, 5, "preço acima da MME50");
+    minus(priceAboveMM200, 4, "preço acima da MM200");
+    minus(nearSupport, 5, "entrada próxima de suporte");
+    minus(volumeDryUp && setup.includes("Rompimento"), 8, "rompimento sem volume");
+    minus(obvSlope > 0 && priceSlope < 0, 7, "divergência altista entre preço e OBV");
+    minus(adxDormant && setup.includes("Continuação"), 5, "ADX baixo para continuação");
+    minus(rsi14 != null && rsi14 < 22, 4, "IFR14 muito vendido");
+  } else {
+    probability = 45;
+    warnings.push("sem gatilho PALEX com confluência suficiente");
+    if (adxDormant) positives.push("ADX baixo pode indicar base de acumulação/distribuição para rompimento futuro");
+    if (bb != null && bb.bandwidth < 8) positives.push("Bandas estreitas indicam possível expansão futura");
   }
 
-  if (palexTrend === "BEAR" && signal.high >= ma9Now && signal.close < ma9Now && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Setup MME9 venda / retorno à média curta",
-      score: 72 + (bearCriteria - bullCriteria) * 3,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, high5Prev),
-      context: "PALEX Bear por tendência e médias",
-      explanation: "Venda pelo retorno controlado à MME9 em tendência de baixa, com fechamento vendedor e perda da mínima do candle de sinal.",
-      reference: "PALEX: operação vendida em tendência, retorno à média e respeito à direção das médias móveis.",
-    }));
+  if (rr != null) {
+    plus(rr >= 2, 8, "risco/retorno igual ou superior a 1:2");
+    plus(rr >= 1.5 && rr < 2, 4, "risco/retorno aceitável");
+    minus(rr < 1.3, 10, "risco/retorno insuficiente");
   }
 
-  if (palexTrend === "BULL" && signal.low <= sma21 && signal.close > sma21 && (bullishEngulfing || bullishHarami || isBullishReversalCandle(signal))) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Retorno para MM21 com candle de reversão",
-      score: 74,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, low10Prev),
-      context: "Correção saudável até MM21",
-      explanation: "O preço corrigiu até a MM21 e deixou candle de reversão/absorção compradora, favorecendo retomada da tendência diária.",
-      reference: "PALEX: retorno para MM21, retorno para MM21 + Fura-teto, Harami/Engolfo de alta e Ponto Contínuo.",
-    }));
-  }
+  probability = Math.min(90, Math.max(30, Math.round(probability)));
 
-  if (palexTrend === "BEAR" && signal.high >= sma21 && signal.close < sma21 && (bearishEngulfing || bearishHarami || isBearishReversalCandle(signal))) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Retorno para MM21 vendido",
-      score: 74,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, high10Prev),
-      context: "Pullback até MM21 em baixa",
-      explanation: "O preço retornou até a MM21 em tendência de baixa e deixou candle vendedor, favorecendo continuação da pressão vendedora.",
-      reference: "PALEX: venda no decorrer da tendência de baixa e trades de retorno à média móvel.",
-    }));
-  }
+  const confluences = positives.length
+    ? `Confluências: ${positives.slice(0, 7).join("; ")}.`
+    : "Confluências: poucas confirmações objetivas.";
 
-  if (sma200 && palexTrend === "BULL" && prior.close < sma200 && signal.close > sma200 && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Rompimento da MM200 dias",
-      score: 70,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, sma21),
-      context: "Virada estrutural acima da MM200",
-      explanation: "Fechamento acima da MM200 com força sugere melhora estrutural e possível migração para tendência de alta no diário.",
-      reference: "PALEX: MM200 dias como filtro de tendência e região técnica relevante.",
-    }));
-  }
+  const alerts = warnings.length
+    ? `Alertas: ${warnings.slice(0, 6).join("; ")}.`
+    : "Alertas: sem divergências críticas detectadas.";
 
-  if (sma200 && palexTrend === "BEAR" && prior.close > sma200 && signal.close < sma200 && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Perda da MM200 dias",
-      score: 70,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, sma21),
-      context: "Deterioração estrutural abaixo da MM200",
-      explanation: "Perda da MM200 com fechamento vendedor indica deterioração técnica e favorece venda ou proteção de posição.",
-      reference: "PALEX: MM200 dias como filtro estrutural de tendência.",
-    }));
-  }
-
-  // 2) Bollinger: FFFD, estreitamento, Walking Up/Down, escadaria/tobogã e TSI.
-  if (prior.close < prevBbLower && signal.close > bbLower && isBullBar(signal)) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Bollinger FFFD comprador",
-      score: 73,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Fechou fora, fechou dentro",
-      explanation: "Após fechamento fora da banda inferior, o preço voltou para dentro das Bandas de Bollinger com candle comprador, configurando reversão tática.",
-      reference: "PALEX: Fechou Fora — Fechou Dentro, Tática da Sombra Inferior e reversão por exaustão.",
-    }));
-  }
-
-  if (prior.close > prevBbUpper && signal.close < bbUpper && isBearBar(signal)) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Bollinger FFFD vendedor",
-      score: 73,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Fechou fora, fechou dentro",
-      explanation: "Após fechamento fora da banda superior, o preço voltou para dentro das Bandas de Bollinger com candle vendedor, configurando reversão tática.",
-      reference: "PALEX: Fechou Fora — Fechou Dentro em Bandas de Bollinger.",
-    }));
-  }
-
-  if (bbWidth < prevBbWidth * 0.85 && expansionBar && signal.close > bbUpper && volumeExpansion) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Estreitamento de Bollinger com rompimento",
-      score: 76,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, bbMid),
-      context: "Volatilidade comprimida e expansão compradora",
-      explanation: "As bandas estreitaram e o candle rompeu para cima com expansão de range e volume, sugerindo início de movimento direcional.",
-      reference: "PALEX: Estreitamento das Bandas, Walking Up the Bands e rompimentos consistentes.",
-    }));
-  }
-
-  if (bbWidth < prevBbWidth * 0.85 && expansionBar && signal.close < bbLower && volumeExpansion) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Estreitamento de Bollinger com perda",
-      score: 76,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, bbMid),
-      context: "Volatilidade comprimida e expansão vendedora",
-      explanation: "As bandas estreitaram e o candle rompeu para baixo com expansão de range e volume, sugerindo início de movimento direcional vendedor.",
-      reference: "PALEX: Estreitamento das Bandas, Barras em Tobogã e rompimentos consistentes.",
-    }));
-  }
-
-  // 3) IFR: IFR14 reversão, pivôs no IFR, virada do IFR, IFR2, filtro MME50 e divergências.
-  if (lastRsi14 < 35 && lastRsi14 > priorRsi14 && isBullishReversalCandle(signal)) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — IFR14 + candle de reversão",
-      score: 71,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Sobrevenda com reação compradora",
-      explanation: "IFR14 em região deprimida virou para cima junto com candle diário de reversão, sugerindo repique técnico ou fim de correção.",
-      reference: "PALEX: IFR14 + candle de reversão, Pivot no IFR e Virada do IFR.",
-    }));
-  }
-
-  if (lastRsi14 > 65 && lastRsi14 < priorRsi14 && isBearishReversalCandle(signal)) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — IFR14 + candle de reversão vendedor",
-      score: 71,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Sobrecompra com reação vendedora",
-      explanation: "IFR14 em região elevada virou para baixo junto com candle diário vendedor, sugerindo realização ou reversão tática.",
-      reference: "PALEX: IFR14 + candle de reversão, Pivot no IFR e Virada do IFR.",
-    }));
-  }
-
-  if (lastRsi2 < 10 && signal.close > ma50Now && isBullBar(signal)) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — IFR2 sobrevendido com filtro MME50",
-      score: 69,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, low5Prev),
-      context: "Pullback curto em tendência positiva",
-      explanation: "IFR2 extremamente sobrevendido acima da MME50 indica correção curta em ativo tecnicamente positivo, com gatilho na superação da máxima.",
-      reference: "PALEX: IFR2 sobrevendido, IFR2 + MME50, média móvel do IFR2 e divergência do IFR2.",
-    }));
-  }
-
-  if (lastRsi2 > 90 && signal.close < ma50Now && isBearBar(signal)) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — IFR2 sobrecomprado com filtro MME50",
-      score: 69,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, high5Prev),
-      context: "Repique curto em tendência negativa",
-      explanation: "IFR2 extremamente sobrecomprado abaixo da MME50 indica repique dentro de estrutura negativa, com gatilho na perda da mínima.",
-      reference: "PALEX: IFR2 com filtro de tendência pela MME50.",
-    }));
-  }
-
-  if (signal.low < low20Prev && lastRsi6 > priorRsi6 && signal.close > prior.close) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Divergência positiva no IFR6",
-      score: 72,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Divergência positiva em fundo",
-      explanation: "O preço renovou mínima, mas o IFR curto reagiu, indicando perda de força vendedora e possível reversão diária.",
-      reference: "PALEX: divergências no IFR6 e IFR2.",
-    }));
-  }
-
-  if (signal.high > high20Prev && lastRsi6 < priorRsi6 && signal.close < prior.close) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Divergência negativa no IFR6",
-      score: 72,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Divergência negativa em topo",
-      explanation: "O preço renovou máxima, mas o IFR curto perdeu força, sugerindo exaustão compradora e risco de realização.",
-      reference: "PALEX: divergências no IFR6 e IFR2.",
-    }));
-  }
-
-  // 4) Price action clássico do livro: rompimentos, falso rompimento, triângulo/congestão, topo histórico, Inside Day, Shark, Turtle Soup, 1-2-3, retração de 50%.
-  if (signal.close > high20Prev && bullCloseStrength && (volumeExpansion || expansionBar)) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Rompimento consistente de topo/congestão",
-      score: 78,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, low10Prev),
-      context: "Breakout diário validado",
-      explanation: "Rompimento de máxima relevante com fechamento forte, range expandido e/ou volume acima da média, atendendo critérios de consistência operacional.",
-      reference: "PALEX: trades de rompimento, rompimento de congestões, rompimento de topos/fundos anteriores e rompimento de topo histórico.",
-    }));
-  }
-
-  if (signal.close < low20Prev && bearCloseStrength && (volumeExpansion || expansionBar)) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Perda consistente de fundo/congestão",
-      score: 78,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, high10Prev),
-      context: "Breakdown diário validado",
-      explanation: "Perda de mínima relevante com fechamento fraco, range expandido e/ou volume acima da média, favorecendo continuidade vendedora.",
-      reference: "PALEX: trades de rompimento, perda de fundos anteriores e venda no decorrer da tendência de baixa.",
-    }));
-  }
-
-  if (signal.low < low20Prev && signal.close > low20Prev && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Rompimento falso / Turtle Soup comprador",
-      score: 75,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Armadilha vendedora",
-      explanation: "O ativo perdeu mínima relevante, mas voltou para dentro da faixa e fechou forte, sugerindo falha vendedora e stop de vendidos.",
-      reference: "PALEX: operação de rompimento falso, Turtle Soup, The Bear Trap e Realização Frustrada.",
-    }));
-  }
-
-  if (signal.high > high20Prev && signal.close < high20Prev && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Rompimento falso / Turtle Soup vendedor",
-      score: 75,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Armadilha compradora",
-      explanation: "O ativo rompeu máxima relevante, mas voltou para dentro da faixa e fechou fraco, sugerindo falha compradora e realização.",
-      reference: "PALEX: operação de rompimento falso, Turtle Soup, The Bull Trap e Realização Frustrada.",
-    }));
-  }
-
-  if (insideDay && palexTrend === "BULL") {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Inside Day comprador",
-      score: 66,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Contração dentro de tendência de alta",
-      explanation: "Inside Day representa compressão de volatilidade; em tendência de alta, o gatilho fica acima da máxima do candle interno.",
-      reference: "PALEX: Inside Day, Narrow Range Day e setups de rompimento após contração.",
-      multiplier: 1.8,
-    }));
-  }
-
-  if (insideDay && palexTrend === "BEAR") {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Inside Day vendedor",
-      score: 66,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Contração dentro de tendência de baixa",
-      explanation: "Inside Day representa compressão de volatilidade; em tendência de baixa, o gatilho fica abaixo da mínima do candle interno.",
-      reference: "PALEX: Inside Day, Narrow Range Day e setups de rompimento após contração.",
-      multiplier: 1.8,
-    }));
-  }
-
-  if (narrowRange && signal.high >= high5Prev * 0.995 && palexTrend === "BULL") {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Narrow Range / 1-2-3-4 comprador",
-      score: 65,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Compressão antes de expansão",
-      explanation: "Range estreito próximo de máxima em contexto positivo; gatilho operacional acima da máxima para capturar expansão.",
-      reference: "PALEX: Narrow Range Day, Setup 1-2-3-4 e Setup 1-2-3.",
-      multiplier: 1.8,
-    }));
-  }
-
-  if (narrowRange && signal.low <= low5Prev * 1.005 && palexTrend === "BEAR") {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Narrow Range / 1-2-3-4 vendedor",
-      score: 65,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Compressão antes de expansão vendedora",
-      explanation: "Range estreito próximo de mínima em contexto negativo; gatilho operacional abaixo da mínima para capturar expansão.",
-      reference: "PALEX: Narrow Range Day, Setup 1-2-3-4 e Setup 1-2-3.",
-      multiplier: 1.8,
-    }));
-  }
-
-  // 5) Gaps e táticas de guerrilha adaptadas ao diário.
-  if (isGapUp(signal, prior) && signal.close > signal.open && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Bullish Gap Surprise / Gap-n-Snap",
-      score: 70,
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, prior.high),
-      context: "Gap de força comprador",
-      explanation: "Gap de alta sustentado por fechamento comprador indica surpresa positiva e pressão compradora persistente.",
-      reference: "PALEX: Gap-n-Snap Play, Bullish Gap Surprise e Bullish 20/20 Play.",
-    }));
-  }
-
-  if (isGapDown(signal, prior) && signal.close < signal.open && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Bearish Gap Surprise / Gap-n-Crap",
-      score: 70,
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, prior.low),
-      context: "Gap de força vendedor",
-      explanation: "Gap de baixa sustentado por fechamento vendedor indica surpresa negativa e pressão vendedora persistente.",
-      reference: "PALEX: Gap-n-Crap Play, Bearish Gap Surprise e Bearish 20/20 Play.",
-    }));
-  }
-
-  if (isGapDown(signal, prior) && signal.close > prior.close && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Gap de baixa frustrado / Key Buy",
-      score: 73,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Reversão forte após gap de baixa",
-      explanation: "O mercado abriu em gap de baixa, rejeitou a pressão vendedora e fechou forte, caracterizando reversão de fluxo.",
-      reference: "PALEX: Key Buy, Gap-n-Snap, Realização Frustrada e Bull Trap/Bear Trap.",
-    }));
-  }
-
-  if (isGapUp(signal, prior) && signal.close < prior.close && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Gap de alta frustrado",
-      score: 73,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Reversão forte após gap de alta",
-      explanation: "O mercado abriu em gap de alta, rejeitou a pressão compradora e fechou fraco, caracterizando armadilha compradora.",
-      reference: "PALEX: Gap-n-Crap, Bull Trap e Realização Frustrada.",
-    }));
-  }
-
-  // 6) Padrões de candle de força e sombras.
-  if (expansionBar && isBullBar(signal) && bullCloseStrength && signal.close > ma21Now) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Barra Elefante / Power Breakout comprador",
-      score: 74 + (volumeExpansion ? 4 : 0),
-      entry: signal.high + tick,
-      stop: Math.min(signal.low, ma21Now),
-      context: "Candle comprador de amplo range",
-      explanation: "Barra diária ampla com fechamento no terço superior acima das médias indica domínio comprador e possível continuidade.",
-      reference: "PALEX: Barra Elefante, Power Breakout, Breakout e Power Move.",
-    }));
-  }
-
-  if (expansionBar && isBearBar(signal) && bearCloseStrength && signal.close < ma21Now) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Barra Elefante / Power Breakout vendedor",
-      score: 74 + (volumeExpansion ? 4 : 0),
-      entry: signal.low - tick,
-      stop: Math.max(signal.high, ma21Now),
-      context: "Candle vendedor de amplo range",
-      explanation: "Barra diária ampla com fechamento no terço inferior abaixo das médias indica domínio vendedor e possível continuidade.",
-      reference: "PALEX: Barra Elefante, Power Breakout, Breakout e Power Move.",
-    }));
-  }
-
-  if (lowerShadow(signal) > barBody(signal) * 1.5 && signal.close > ma10Now && bullCloseStrength) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Tática da Sombra Inferior",
-      score: 68,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Rejeição de preços baixos",
-      explanation: "Sombra inferior relevante mostra rejeição da mínima diária e retomada acima da média curta, favorecendo compra tática.",
-      reference: "PALEX: Tática da Sombra Inferior e Linha da Sombra MME10.",
-      multiplier: 1.8,
-    }));
-  }
-
-  if (upperShadow(signal) > barBody(signal) * 1.5 && signal.close < ma10Now && bearCloseStrength) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Tática da Sombra Superior",
-      score: 68,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Rejeição de preços altos",
-      explanation: "Sombra superior relevante mostra rejeição da máxima diária e perda da média curta, favorecendo venda tática.",
-      reference: "PALEX: adaptação vendida da lógica de sombra e operações contra excesso.",
-      multiplier: 1.8,
-    }));
-  }
-
-  // 7) Retração aproximada de 50%, Shark/Peg Leg como leitura de correção profunda e retomada.
-  const high60 = Math.max(...highs.slice(-60));
-  const low60 = Math.min(...lows.slice(-60));
-  const mid60 = low60 + (high60 - low60) * 0.5;
-  const nearHalfRetrace = Math.abs(signal.close - mid60) / Math.max(signal.close, 1) < 0.025;
-
-  if (nearHalfRetrace && palexTrend === "BULL" && isBullishReversalCandle(signal)) {
-    push(buildCandidate({
-      action: "COMPRA",
-      setup: "PALEX — Retração de 50% com reversão",
-      score: 67,
-      entry: signal.high + tick,
-      stop: signal.low,
-      context: "Correção profunda com reação",
-      explanation: "O preço reagiu próximo da retração de 50% do movimento recente, com candle de reversão comprador.",
-      reference: "PALEX: Retração de 50%, Padrão Shark, Peg Leg e trades de correção.",
-      multiplier: 1.8,
-    }));
-  }
-
-  if (nearHalfRetrace && palexTrend === "BEAR" && isBearishReversalCandle(signal)) {
-    push(buildCandidate({
-      action: "VENDA",
-      setup: "PALEX — Retração de 50% vendida",
-      score: 67,
-      entry: signal.low - tick,
-      stop: signal.high,
-      context: "Repique corretivo com rejeição",
-      explanation: "O preço rejeitou a região de 50% do movimento recente em contexto de baixa, favorecendo retomada vendedora.",
-      reference: "PALEX: Retração de 50%, Padrão Shark, Peg Leg e trades de correção.",
-      multiplier: 1.8,
-    }));
-  }
-
-  const best = candidates.sort((a, b) => b.score - a.score)[0];
-
-  if (!best) {
-    const context =
-      palexTrend === "BULL"
-        ? `PALEX Bull: ${bullCriteria}/5 critérios de tendência positivos`
-        : palexTrend === "BEAR"
-        ? `PALEX Bear: ${bearCriteria}/5 critérios de tendência negativos`
-        : `PALEX Range: sem 3 critérios convergentes`;
-
-    return {
-      action: "AGUARDAR",
-      setup: "PALEX — Aguardar confirmação",
-      context,
-      signalQuality: quality,
-      entry: null,
-      stop: null,
-      target: null,
-      rr: null,
-      explanation:
-        "Nenhum setup PALEX diário alcançou confluência profissional suficiente. Aguardar gatilho claro: rompimento consistente, falha em região relevante, retorno qualificado às médias, sinal de Bollinger/IFR ou gap confirmado.",
-      brooksReason:
-        "Leitura PALEX independente da leitura Al Brooks, aplicada somente ao gráfico diário.",
-      brooksReference:
-        "PALEX — filtros combinados: cinco critérios de tendência, MME9/MM21/MM200, Bandas de Bollinger, IFR, gaps, rompimentos, falso rompimento, padrões de candle, seleção de força e controle de risco.",
-      probability: 45,
-      grade: "Neutro",
-    };
-  }
-
-  const rr = Math.abs(best.target - best.entry) / Math.abs(best.entry - best.stop);
-  let probability = Math.round(best.score);
-  if (quality === "FORTE") probability += 4;
-  if (volumeExpansion) probability += 3;
-  if (rr >= 2) probability += 3;
-  if (best.action === "COMPRA" && palexTrend === "BULL") probability += 3;
-  if (best.action === "VENDA" && palexTrend === "BEAR") probability += 3;
-  if (palexTrend === "RANGE" && !best.setup.includes("Falha") && !best.setup.includes("Turtle")) probability -= 4;
-  probability = Math.min(88, Math.max(35, probability));
+  const metrics = `Métricas: MM21 ${formatBRL(mm21)}, MME50 ${formatBRL(mm50)}, MM200 ${formatBRL(
+    mm200
+  )}, IFR14 ${rsi14 != null ? rsi14.toFixed(1) : "--"}, IFR2 ${
+    rsi2 != null ? rsi2.toFixed(1) : "--"
+  }, ADX ${dm.adx != null ? dm.adx.toFixed(1) : "--"}, suporte ${formatBRL(
+    support60
+  )}, resistência ${formatBRL(resistance60)}.`;
 
   return {
-    action: best.action,
-    setup: best.setup,
-    context: best.context,
+    action,
+    setup,
+    context: `${context} • Quality Engine ${probability}/100`,
     signalQuality: quality,
-    entry: best.entry,
-    stop: best.stop,
-    target: best.target,
+    entry,
+    stop,
+    target,
     rr,
-    explanation: best.explanation,
+    explanation: `${explanation} ${confluences} ${alerts} ${metrics}`,
     brooksReason:
-      "Leitura PALEX independente da leitura Al Brooks, aplicada exclusivamente ao gráfico diário e consolidada pelo setup de maior confluência.",
-    brooksReference: best.reference,
+      "Leitura PALEX independente da leitura Al Brooks, aplicada exclusivamente ao gráfico diário. O Quality Engine qualifica o setup por tendência, suporte/resistência, volume, OBV, médias, IFR, Bollinger, ADX/DI e risco/retorno.",
+    brooksReference:
+      "PALEX — Fundamentos + Estratégias: tendência por topos/fundos, suportes/resistências, volume/OBV, estopes, pivots, candlesticks, MME9/MM21/MM200, IFR/IFR2, Bandas de Bollinger, ADX/DI, Fibonacci, rompimentos, falhas e plano de trade.",
     probability,
     grade: probabilityToGrade(probability),
   };
 }
-
 function calculateAlignment(daily: TradePlan, palexDaily: TradePlan) {
   if (!daily || !palexDaily) return false;
   if (daily.action === "AGUARDAR" || palexDaily.action === "AGUARDAR") return false;
